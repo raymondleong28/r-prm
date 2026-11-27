@@ -80,6 +80,7 @@ export default function TransactionsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Transactions"
         countLabel={`${filtered.length} transactions`}
         views={["All", "This Month", "This Quarter"]}

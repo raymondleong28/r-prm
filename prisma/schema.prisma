@@ -44,7 +44,7 @@ model Partner {
   onboardingPipeline   String   @default("")
   onboardingStage      String   @default("")
   prospectionStage     String   @default("New") // New, Onboarding, Active
-  partnerType          String   @default("Reseller")
+  partnerType          String   @default("")
   country              String   @default("")
   language             String   @default("English")
   currency             String
@@ -355,8 +355,9 @@ model User {
   partnerName         String?
   isMainContact       Boolean   @default(false)
   passwordHash        String    // format: "scrypt:<randomSaltHex>:<derivedKeyHex>"
-  mfaSecret           String?
-  recoveryCodesJson   String    @default("[]")
+  mfaSecret           String?   // AES-256-GCM encrypted base32 TOTP secret ("enc:v1:..."); pending until mfaConfirmedAt is set
+  mfaConfirmedAt      DateTime?
+  recoveryCodesJson   String    @default("[]") // JSON array of "sha256:<hex>" recovery-code hashes; plaintext never stored
   status              String    @default("Active") // Active, Pending, Disabled
   isTestAccount       Boolean   @default(false)
   createdAt           DateTime  @default(now())

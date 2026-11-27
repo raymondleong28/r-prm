@@ -66,6 +66,7 @@ export default function PayoutsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Payouts"
         countLabel={`${filtered.length} payouts`}
         views={["All", "Draft", "Pending", "Ready", "Paid"]}

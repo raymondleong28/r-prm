@@ -60,6 +60,7 @@ export default function CollaborationsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Collaborations"
         countLabel={`${filtered.length} collaborations`}
         views={["All", "New Collaborations", "Accepted", "Closed"]}

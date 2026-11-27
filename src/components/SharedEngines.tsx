@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
+import { downloadCsv, rowsToCsv } from "@/lib/csvExport";
 import {
   Search,
   Filter,
@@ -98,6 +99,8 @@ interface EntityListToolbarProps {
   onSecondaryAction?: () => void;
   extraRightControls?: React.ReactNode;
   onExport?: () => void;
+  /** Rows currently shown in the list; Export downloads them as CSV. Without rows (or onExport) the Export button is hidden. */
+  exportRows?: Array<Record<string, unknown>>;
 }
 
 export function EntityListToolbar({
@@ -115,6 +118,7 @@ export function EntityListToolbar({
   onSecondaryAction,
   extraRightControls,
   onExport,
+  exportRows,
 }: EntityListToolbarProps) {
   const { settings, mutate, showToast } = usePrm();
   const [customViews, setCustomViews] = useState<string[]>([]);
@@ -178,16 +182,25 @@ export function EntityListToolbar({
             <Upload className="w-3.5 h-3.5 text-slate-500" />
             <span>Import CSV</span>
           </button>
+          {(onExport || exportRows) && (
           <button
             onClick={() => {
-              if (onExport) onExport();
-              else showToast(`Exported ${title} view to CSV`);
+              if (onExport) {
+                onExport();
+                return;
+              }
+              const rows = exportRows || [];
+              const stamp = new Date().toISOString().slice(0, 10);
+              const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+              downloadCsv(`${slug}-${stamp}.csv`, rowsToCsv(rows));
+              showToast(`Exported ${rows.length} row(s) to CSV`);
             }}
             className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 flex items-center space-x-1.5"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>Export</span>
           </button>
+          )}
           {secondaryActionLabel && onSecondaryAction && (
             <button
               onClick={onSecondaryAction}

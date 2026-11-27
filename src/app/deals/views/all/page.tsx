@@ -51,6 +51,7 @@ export default function DealsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Deals"
         countLabel={`${filtered.length} deals`}
         views={["All", "My Deals", "Pending Deals"]}

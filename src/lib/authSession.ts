@@ -191,7 +191,9 @@ export async function getActiveServerSession(
     partnerId: effectivePartnerId,
     partnerName: effectivePartnerName,
     impersonatingPartnerId: row.impersonatingPartnerId,
-    mfaEnrolled: Boolean(row.user.mfaSecret),
+    mfaEnrolled: Boolean(
+      row.user.mfaConfirmedAt && row.user.mfaSecret?.startsWith("enc:v1:")
+    ),
     mfaVerified: true,
     issuedAt: row.createdAt.getTime(),
     expiresAt: row.expiresAt.getTime(),

@@ -67,6 +67,7 @@ export default function AccountsMappingListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Accounts"
         countLabel={`${filtered.length} accounts`}
         views={[

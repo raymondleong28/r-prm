@@ -36,6 +36,7 @@ export default function OverlapsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={overlaps}
         title="Overlaps"
         countLabel={`${overlaps.length} overlaps`}
         views={[

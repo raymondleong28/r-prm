@@ -72,6 +72,7 @@ export default function TasksListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Tasks"
         countLabel={`${filtered.length} tasks`}
         views={["All", "Overdue", "Due Today", "Upcoming", "Completed"]}

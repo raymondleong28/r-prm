@@ -69,6 +69,7 @@ export default function BusinessPlansListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Business plans"
         countLabel={`${filtered.length} business plans`}
         views={["All", "Draft", "Active"]}

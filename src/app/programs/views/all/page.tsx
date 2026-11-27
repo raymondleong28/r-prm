@@ -44,6 +44,7 @@ export default function ProgramsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Programs"
         countLabel={`${filtered.length} programs`}
         views={["All"]}

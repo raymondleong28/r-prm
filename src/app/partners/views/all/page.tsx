@@ -42,6 +42,7 @@ export default function PartnersListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Partners"
         countLabel={`${filtered.length} partners`}
         views={[

@@ -78,6 +78,7 @@ export default function CustomersListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Customers"
         countLabel={`${filtered.length} customers`}
         views={["All", "Paying"]}

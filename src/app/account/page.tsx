@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { AccountMfaSection } from "@/components/AccountMfaSection";
+import { PartnerPipelineSettings } from "@/components/PartnerPipelineSettings";
+import {
+  readProspectionSettings,
+  type ProspectionCardFieldId,
+} from "@/lib/prospectionSettings";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
@@ -40,7 +46,7 @@ const PROPERTY_OBJECTS = [
 export default function AccountRootPage() {
   const params = useParams();
   const initialTab = String(params?.tab || "defaults");
-  const { settings, manageItems, session, auditLogs, mutate, refresh, showToast } =
+  const { settings, manageItems, session, auditLogs, partners, mutate, refresh, showToast } =
     usePrm();
   const [activeTab, setActiveTab] = useState(initialTab);
   const [propObject, setPropObject] = useState("Leads");
@@ -52,22 +58,25 @@ export default function AccountRootPage() {
   >(null);
   const [resetConfirmationText, setResetConfirmationText] = useState("");
 
-  // Enrolment secret shown ONLY during interactive enrolment (§3.5.1)
-  const [mfaEnrollmentResult, setMfaEnrollmentResult] = useState<{
-    secret: string;
-    otpauthUri: string;
-    recoveryCodes: string[];
-  } | null>(null);
-
-  const [partnerTypes, setPartnerTypes] = useState([
-    "Reseller",
-    "System Integrator",
-    "Referral Agency",
-    "Technology Partner",
-  ]);
-  const [newPartnerType, setNewPartnerType] = useState("");
-
   const acct = settings.account_settings || {};
+  // Partner types: saved list, or (before the first save) the types already used on partner records
+  const [partnerTypes, setPartnerTypes] = useState<string[]>(() =>
+    Array.isArray(acct.partnerTypes)
+      ? acct.partnerTypes
+      : Array.from(
+          new Set(
+            (partners || [])
+              .map((p: { partnerType?: string | null }) => String(p.partnerType || "").trim())
+              .filter(Boolean)
+          )
+        )
+  );
+  const [prospectionStages, setProspectionStages] = useState<string[]>(
+    () => readProspectionSettings(acct).stages
+  );
+  const [prospectionCardFields, setProspectionCardFields] = useState<ProspectionCardFieldId[]>(
+    () => readProspectionSettings(acct).cardFields
+  );
   const baseCurrency = acct.mainCurrency || SUPPORTED_CURRENCIES[0];
 
   const [accountName, setAccountName] = useState(acct.accountName || "");
@@ -144,9 +153,26 @@ export default function AccountRootPage() {
   );
 
   useEffect(() => {
+    if (Array.isArray(settings.account_settings?.partnerTypes)) return;
+    setPartnerTypes(
+      Array.from(
+        new Set(
+          (partners || [])
+            .map((p: { partnerType?: string | null }) => String(p.partnerType || "").trim())
+            .filter(Boolean)
+        )
+      )
+    );
+  }, [partners, settings.account_settings]);
+
+  useEffect(() => {
     const s = settings.account_settings;
     if (!s) return;
     if (s.accountName !== undefined) setAccountName(s.accountName);
+    if (Array.isArray(s.partnerTypes)) setPartnerTypes(s.partnerTypes);
+    const prospection = readProspectionSettings(s);
+    setProspectionStages(prospection.stages);
+    setProspectionCardFields(prospection.cardFields);
     if (s.timezone !== undefined) setTimezone(s.timezone);
     if (s.mainCurrency !== undefined) setMainCurrency(s.mainCurrency);
     if (s.defaultOwnerName !== undefined)
@@ -232,28 +258,13 @@ export default function AccountRootPage() {
           legalEntityName,
           taxId,
           billingAddress,
+          partnerTypes,
+          prospectionStages,
+          prospectionCardFields,
         },
       },
       msg
     );
-  };
-
-  const handleEnrollMfa = async () => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "enroll_mfa" }),
-    });
-    const json = await res.json();
-    if (res.ok && json.enrollment) {
-      setMfaEnrollmentResult(json.enrollment);
-      await refresh();
-      showToast(
-        "Authenticator enrolled! Copy your secret and recovery codes now."
-      );
-    } else {
-      showToast(json.error || "MFA enrolment failed");
-    }
   };
 
   const handleAddProperty = async (e: React.FormEvent) => {
@@ -300,9 +311,6 @@ export default function AccountRootPage() {
     setNewTokenName("");
   };
 
-  const isUserMfaEnrolled = Boolean(
-    session?.mfaEnrolled || mfaEnrollmentResult
-  );
   const currentOrigin =
     typeof window !== "undefined" ? window.location.origin : portalDomain || "";
 
@@ -576,69 +584,16 @@ export default function AccountRootPage() {
                 </label>
               </div>
 
-              {/* Signed-in User Real MFA Status & Enrolment (§3.5.1) */}
-              <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-bold text-slate-900">
-                      Your Account Authenticator Status (
-                      {session?.email || "Signed-in User"})
-                    </h3>
-                    <p className="text-slate-600">
-                      {isUserMfaEnrolled
-                        ? "TOTP authenticator is enrolled on your account. Secrets are never displayed outside active enrolment."
-                        : "No authenticator app is currently enrolled on your account."}
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                        isUserMfaEnrolled
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-slate-200 text-slate-700"
-                      }`}
-                    >
-                      {isUserMfaEnrolled ? "TOTP Active" : "Not Enrolled"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleEnrollMfa}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                    >
-                      {isUserMfaEnrolled
-                        ? "Rotate Authenticator"
-                        : "Enrol Authenticator"}
-                    </button>
-                  </div>
-                </div>
-
-                {mfaEnrollmentResult && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-blue-200">
-                    <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                      <span className="text-[10px] font-bold uppercase text-emerald-700">
-                        New TOTP Secret (Displayed Once During Enrolment)
-                      </span>
-                      <p className="font-mono font-bold text-slate-900 select-all">
-                        {mfaEnrollmentResult.secret}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        Issuer: {accountName || "R-PRM"} · Algorithm: HMAC-SHA1
-                        · 30s step
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                      <span className="text-[10px] font-bold uppercase text-emerald-700">
-                        Emergency Recovery Codes (Single-Use)
-                      </span>
-                      <div className="grid grid-cols-2 gap-1 font-mono text-[11px] text-slate-800">
-                        {mfaEnrollmentResult.recoveryCodes.map((code) => (
-                          <span key={code}>{code}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* The signed-in user's own two-step login */}
+              <AccountMfaSection
+                email={session?.email || ""}
+                enrolled={Boolean(session?.mfaEnrolled)}
+                requiredForMe={
+                  session?.identityType === "partner" ? requireMfaPartners : requireMfaCoworkers
+                }
+                onChanged={refresh}
+                onToast={showToast}
+              />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                 <div>
@@ -688,69 +643,22 @@ export default function AccountRootPage() {
                 </button>
               </div>
 
-              <div className="p-4 rounded-xl border border-slate-200 space-y-3">
-                <h3 className="font-bold text-sm text-slate-900">
-                  Partner types
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {partnerTypes.map((pt) => (
-                    <span
-                      key={pt}
-                      className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold"
-                    >
-                      {pt}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2 max-w-sm">
-                  <input
-                    value={newPartnerType}
-                    onChange={(e) => setNewPartnerType(e.target.value)}
-                    placeholder="Add partner type (e.g. MSP)"
-                    className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg"
-                  />
-                  <button
-                    onClick={() => {
-                      if (!newPartnerType.trim()) return;
-                      setPartnerTypes([...partnerTypes, newPartnerType.trim()]);
-                      setNewPartnerType("");
-                      showToast("Added new partner type!");
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold"
-                  >
-                    + Add
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-xl border border-slate-200 space-y-2">
-                  <h4 className="font-bold text-slate-900">
-                    Prospection pipeline stages
-                  </h4>
-                  <p className="text-slate-500">
-                    1. New → 2. Onboarding → 3. Active
-                  </p>
-                </div>
-                <div className="p-4 rounded-xl border border-slate-200 space-y-2">
-                  <h4 className="font-bold text-slate-900">
-                    Prospection cards layout
-                  </h4>
-                  <p className="text-slate-500">
-                    Visible fields: Partner name, Partner type, Program level,
-                    Owner, Status badge
-                  </p>
-                </div>
-                <div className="p-4 rounded-xl border border-slate-200 space-y-2">
-                  <h4 className="font-bold text-slate-900">
-                    Onboarding cards layout
-                  </h4>
-                  <p className="text-slate-500">
-                    Visible fields: Partner name, Program, Qualifying level,
-                    Pending actions count
-                  </p>
-                </div>
-              </div>
+              <PartnerPipelineSettings
+                partnerTypes={partnerTypes}
+                setPartnerTypes={setPartnerTypes}
+                stages={prospectionStages}
+                setStages={setProspectionStages}
+                cardFields={prospectionCardFields}
+                setCardFields={setProspectionCardFields}
+                stageCounts={(partners || []).reduce(
+                  (acc: Record<string, number>, p: { prospectionStage?: string | null }) => {
+                    const k = String(p.prospectionStage || "");
+                    acc[k] = (acc[k] || 0) + 1;
+                    return acc;
+                  },
+                  {}
+                )}
+              />
 
               <button
                 onClick={() => handleSaveSettings("Partner settings saved!")}

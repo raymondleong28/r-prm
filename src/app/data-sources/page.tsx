@@ -60,6 +60,7 @@ export default function DataSourcesPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Data sources"
         countLabel={`${filtered.length} sources`}
         views={["All"]}
@@ -82,6 +83,7 @@ export default function DataSourcesPage() {
                 <th className="py-3 px-3 font-semibold">Type</th>
                 <th className="py-3 px-3 font-semibold">Account type</th>
                 <th className="py-3 px-3 font-semibold">Last imported date</th>
+                <th className="py-3 px-3 font-semibold">Creation date</th>
                 <th className="py-3 px-4 font-semibold">Created by</th>
               </tr>
             </thead>
@@ -101,6 +103,9 @@ export default function DataSourcesPage() {
                   <td className="py-3 px-3 text-slate-700">{ds.accountType}</td>
                   <td className="py-3 px-3 text-slate-500">
                     {ds.lastImportedDate || "—"}
+                  </td>
+                  <td className="py-3 px-3 text-slate-500">
+                    {ds.createdAt ? new Date(ds.createdAt).toLocaleDateString() : "—"}
                   </td>
                   <td className="py-3 px-4 text-slate-600">
                     {ds.createdBy || "—"}

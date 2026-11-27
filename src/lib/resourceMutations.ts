@@ -179,7 +179,7 @@ export async function executeResourceMutation(
           currency: String(payload.currency || ws.mainCurrency)
             .trim()
             .toUpperCase(),
-          partnerType: payload.partnerType || "Reseller",
+          partnerType: String(payload.partnerType || "").trim(),
           qualifyingLevel: payload.qualifyingLevel || firstLevelName,
           status: payload.status || "Active",
           onboardingStatus: payload.onboardingStatus || "In progress",

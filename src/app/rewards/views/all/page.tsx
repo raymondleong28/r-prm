@@ -74,6 +74,7 @@ export default function RewardsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Rewards"
         countLabel={`${filtered.length} rewards`}
         views={["All", "Due", "Paid"]}

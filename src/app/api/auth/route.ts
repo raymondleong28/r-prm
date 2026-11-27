@@ -2,16 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   authenticateUserFromDatabase,
+  checkRateLimitKey,
   createServerSessionRow,
   getActiveServerSession,
   inspectActivationToken,
+  recordAuthFailure,
   redeemActivationTokenAndSetPassword,
+  resetRateLimitKey,
   revokeServerSessionById,
 } from "@/lib/authSession";
 import {
-  enrollTotpMfa,
-  verifyTotpOrRecoveryCode,
-} from "@/lib/connectors";
+  clearMfa,
+  confirmPendingEnrollment,
+  getOrCreatePendingEnrollment,
+  isMfaConfirmed,
+  regenerateRecoveryCodes,
+  restartPendingEnrollment,
+  verifyConfirmedMfaCode,
+} from "@/lib/mfaFlow";
 import { getCookieOptions } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -195,31 +203,50 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 4b. Interactive Authenticator MFA Enrolment from Security Tab (§3.5.1: display secret only during enrolment)
+    // 4b. Two-step login setup from the Security tab: start (or restart) a pending setup
     if (action === "enroll_mfa") {
       const current = await getActiveServerSession(req);
       if (!current) {
         return NextResponse.json({ error: "Not signed in" }, { status: 401 });
       }
-      const acctRow = await prisma.appSetting.findUnique({
-        where: { key: "account_settings" },
-      });
-      let issuerName = "R-PRM";
-      if (acctRow?.valueJson) {
-        try {
-          issuerName = JSON.parse(acctRow.valueJson).accountName || "R-PRM";
-        } catch {
-          // ignore
-        }
+      const userRow = await prisma.user.findUnique({ where: { id: current.userId } });
+      if (!userRow) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
-      const enrolled = enrollTotpMfa(current.email, issuerName);
-      await prisma.user.update({
-        where: { id: current.userId },
+      if (isMfaConfirmed(userRow)) {
+        return NextResponse.json(
+          { error: "Two-step login is already set up. Turn it off first to set up a new device." },
+          { status: 409 }
+        );
+      }
+      const enrollment = await restartPendingEnrollment(userRow);
+      await prisma.auditLog.create({
         data: {
-          mfaSecret: enrolled.secret,
-          recoveryCodesJson: JSON.stringify(enrolled.recoveryCodes),
+          actor: current.email,
+          actorRole: `${current.identityType} (${current.role})`,
+          action: "MFA_SETUP_STARTED",
+          objectType: "User",
+          objectId: current.userId,
+          summary: `Started two-step login setup for ${current.email}`,
         },
       });
+      return NextResponse.json({ ok: true, mfaEnrolled: false, enrollment });
+    }
+
+    // 4b-ii. Confirm a pending setup with the first authenticator code; recovery codes are returned once
+    if (action === "confirm_mfa") {
+      const current = await getActiveServerSession(req);
+      if (!current) {
+        return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+      }
+      const userRow = await prisma.user.findUnique({ where: { id: current.userId } });
+      if (!userRow) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      const result = await confirmPendingEnrollment(userRow, String(body.code || ""));
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
       await prisma.auditLog.create({
         data: {
           actor: current.email,
@@ -227,18 +254,69 @@ export async function POST(req: NextRequest) {
           action: "MFA_ENROLLED",
           objectType: "User",
           objectId: current.userId,
-          summary: `Enrolled TOTP authenticator MFA for ${current.email}`,
+          summary: `Confirmed two-step login for ${current.email}`,
         },
       });
-      return NextResponse.json({
-        ok: true,
-        mfaEnrolled: true,
-        enrollment: {
-          secret: enrolled.secret,
-          otpauthUri: enrolled.otpauthUri,
-          recoveryCodes: enrolled.recoveryCodes,
+      return NextResponse.json({ ok: true, mfaEnrolled: true, recoveryCodes: result.recoveryCodes });
+    }
+
+    // 4b-iii. Replace recovery codes (requires a current authenticator code)
+    if (action === "regenerate_recovery_codes") {
+      const current = await getActiveServerSession(req);
+      if (!current) {
+        return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+      }
+      const userRow = await prisma.user.findUnique({ where: { id: current.userId } });
+      if (!userRow) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      const result = await regenerateRecoveryCodes(userRow, String(body.code || ""));
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      await prisma.auditLog.create({
+        data: {
+          actor: current.email,
+          actorRole: `${current.identityType} (${current.role})`,
+          action: "MFA_RECOVERY_CODES_REGENERATED",
+          objectType: "User",
+          objectId: current.userId,
+          summary: `Issued new recovery codes for ${current.email}`,
         },
       });
+      return NextResponse.json({ ok: true, recoveryCodes: result.recoveryCodes });
+    }
+
+    // 4b-iv. Administrator resets another user's two-step login (lost phone)
+    if (action === "admin_reset_mfa") {
+      const current = await getActiveServerSession(req);
+      if (!current) {
+        return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+      }
+      if (current.identityType !== "coworker" || current.role !== "Administrator") {
+        return NextResponse.json({ error: "Only administrators can reset two-step login" }, { status: 403 });
+      }
+      const targetEmail = String(body.email || "").trim().toLowerCase();
+      const target = await prisma.user.findUnique({ where: { email: targetEmail } });
+      if (!target) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      await clearMfa(target.id);
+      await prisma.session.updateMany({
+        where: { userId: target.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.auditLog.create({
+        data: {
+          actor: current.email,
+          actorRole: `${current.identityType} (${current.role})`,
+          action: "MFA_RESET_BY_ADMIN",
+          objectType: "User",
+          objectId: target.id,
+          summary: `Administrator ${current.email} reset two-step login for ${target.email} and signed them out`,
+        },
+      });
+      return NextResponse.json({ ok: true });
     }
 
     // 4c. Disable MFA for signed-in user (refused if workspace policy requires MFA)
@@ -269,13 +347,7 @@ export async function POST(req: NextRequest) {
           // ignore
         }
       }
-      await prisma.user.update({
-        where: { id: current.userId },
-        data: {
-          mfaSecret: null,
-          recoveryCodesJson: "[]",
-        },
-      });
+      await clearMfa(current.userId);
       await prisma.auditLog.create({
         data: {
           actor: current.email,
@@ -334,83 +406,112 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (requireMfaForUser && !userRow.mfaSecret) {
-      // First-login MFA enrolment when required by workspace policy
-      const enrolled = enrollTotpMfa(userRow.email);
-      await prisma.user.update({
-        where: { id: userRow.id },
-        data: {
-          mfaSecret: enrolled.secret,
-          recoveryCodesJson: JSON.stringify(enrolled.recoveryCodes),
-        },
-      });
-      await prisma.auditLog.create({
-        data: {
-          actor: userRow.email,
-          actorRole: `${userRow.identityType} (${userRow.role})`,
-          action: "MFA_ENROLLMENT_ISSUED",
-          objectType: "User",
-          objectId: userRow.id,
-          summary: `Issued first-login MFA enrollment for ${userRow.email} because MFA is required by workspace policy`,
-        },
-      });
-      return NextResponse.json(
-        {
-          error:
-            "Multi-factor authentication is required. Enroll your authenticator app and enter the 6-digit code to sign in.",
-          mfaEnrollmentRequired: true,
-          enrollment: {
-            otpauthUri: enrolled.otpauthUri,
-            recoveryCodes: enrolled.recoveryCodes,
-          },
-        },
-        { status: 403 }
-      );
-    }
+    // Two-step login: required by workspace policy, or switched on by the user themselves
+    const mfaConfirmed = isMfaConfirmed(userRow);
+    const mfaCode = String(body.mfaCode || "").trim();
+    const mfaRateKey = `mfa:${userRow.email}`;
+    let recoveryCodesToShow: string[] | undefined;
+    let recoveryCodesLeft: number | undefined;
 
-    if (requireMfaForUser && !body.mfaCode) {
-      return NextResponse.json(
-        {
-          error:
-            "Multi-factor authentication code is required by workspace security policy.",
-          mfaRequired: true,
-        },
-        { status: 401 }
-      );
-    }
-
-    if (body.mfaCode) {
-      if (!userRow.mfaSecret) {
+    if (requireMfaForUser || mfaConfirmed) {
+      const mfaRate = await checkRateLimitKey(mfaRateKey);
+      if (!mfaRate.allowed) {
         return NextResponse.json(
           {
-            error:
-              "MFA is not enrolled on this account. Enroll an authenticator first.",
+            error: `Too many wrong codes. Try again in ${mfaRate.retryAfterSeconds}s.`,
           },
-          { status: 401 }
+          { status: 429 }
         );
       }
-      const recoveryCodes: string[] = userRow.recoveryCodesJson
-        ? JSON.parse(userRow.recoveryCodesJson)
-        : [];
-      const mfaCheck = verifyTotpOrRecoveryCode(
-        body.mfaCode,
-        userRow.mfaSecret,
-        recoveryCodes
-      );
-      if (!mfaCheck.valid) {
-        return NextResponse.json(
-          { error: "Invalid TOTP authenticator or recovery code" },
-          { status: 401 }
-        );
-      }
-      if (mfaCheck.method === "recovery") {
-        await prisma.user.update({
-          where: { id: userRow.id },
+
+      if (!mfaConfirmed) {
+        // Setup required: show the same pending setup on every attempt until a valid code confirms it
+        if (!mfaCode) {
+          const enrollment = await getOrCreatePendingEnrollment(userRow);
+          await prisma.auditLog.create({
+            data: {
+              actor: userRow.email,
+              actorRole: `${userRow.identityType} (${userRow.role})`,
+              action: "MFA_SETUP_SHOWN",
+              objectType: "User",
+              objectId: userRow.id,
+              summary: `Two-step login setup shown at sign-in for ${userRow.email} (required by workspace policy)`,
+            },
+          });
+          return NextResponse.json(
+            {
+              error:
+                "Two-step login is required. Scan the QR code with your authenticator app, then enter the 6-digit code.",
+              mfaEnrollmentRequired: true,
+              enrollment,
+            },
+            { status: 403 }
+          );
+        }
+        const confirmed = await confirmPendingEnrollment(userRow, mfaCode);
+        if (!confirmed.ok) {
+          const fail = await recordAuthFailure(mfaRateKey);
+          const enrollment = await getOrCreatePendingEnrollment(userRow);
+          return NextResponse.json(
+            {
+              error: fail.lockedOut
+                ? "Too many wrong codes. Try again later."
+                : confirmed.error,
+              mfaEnrollmentRequired: true,
+              enrollment,
+            },
+            { status: fail.lockedOut ? 429 : 401 }
+          );
+        }
+        recoveryCodesToShow = confirmed.recoveryCodes;
+        await prisma.auditLog.create({
           data: {
-            recoveryCodesJson: JSON.stringify(mfaCheck.remainingRecoveryCodes),
+            actor: userRow.email,
+            actorRole: `${userRow.identityType} (${userRow.role})`,
+            action: "MFA_ENROLLED",
+            objectType: "User",
+            objectId: userRow.id,
+            summary: `Confirmed two-step login at sign-in for ${userRow.email}`,
           },
         });
+      } else {
+        if (!mfaCode) {
+          return NextResponse.json(
+            {
+              error: "Enter the 6-digit code from your authenticator app, or a recovery code.",
+              mfaRequired: true,
+            },
+            { status: 401 }
+          );
+        }
+        const check = await verifyConfirmedMfaCode(userRow, mfaCode);
+        if (!check.valid) {
+          const fail = await recordAuthFailure(mfaRateKey);
+          return NextResponse.json(
+            {
+              error: fail.lockedOut
+                ? "Too many wrong codes. Try again later."
+                : "That code didn't match. Use a current authenticator code or an unused recovery code.",
+              mfaRequired: true,
+            },
+            { status: fail.lockedOut ? 429 : 401 }
+          );
+        }
+        if (check.method === "recovery") {
+          recoveryCodesLeft = check.recoveryCodesLeft;
+          await prisma.auditLog.create({
+            data: {
+              actor: userRow.email,
+              actorRole: `${userRow.identityType} (${userRow.role})`,
+              action: "MFA_RECOVERY_CODE_USED",
+              objectType: "User",
+              objectId: userRow.id,
+              summary: `Recovery code used at sign-in for ${userRow.email} (${check.recoveryCodesLeft} left)`,
+            },
+          });
+        }
       }
+      await resetRateLimitKey(mfaRateKey);
     }
 
     const { sessionRowId, cookieValue, expiresAt } =
@@ -441,13 +542,18 @@ export async function POST(req: NextRequest) {
       partnerId: authResult.user.partnerId,
       partnerName: authResult.user.partnerName,
       impersonatingPartnerId: null,
-      mfaEnrolled: Boolean(userRow.mfaSecret),
+      mfaEnrolled: Boolean(recoveryCodesToShow) || mfaConfirmed,
       mfaVerified: true,
       issuedAt: Date.now(),
       expiresAt: expiresAt.getTime(),
     };
 
-    const res = NextResponse.json({ ok: true, session: sessionPayload });
+    const res = NextResponse.json({
+      ok: true,
+      session: sessionPayload,
+      ...(recoveryCodesToShow ? { recoveryCodes: recoveryCodesToShow } : {}),
+      ...(recoveryCodesLeft !== undefined ? { recoveryCodesLeft } : {}),
+    });
     res.cookies.set("rprm_session", cookieValue, getCookieOptions(86400));
     return res;
   } catch (error) {

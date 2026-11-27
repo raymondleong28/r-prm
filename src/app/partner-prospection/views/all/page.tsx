@@ -4,17 +4,57 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
-import { ArrowRight } from "lucide-react";
+import {
+  readProspectionSettings,
+  type ProspectionCardFieldId,
+} from "@/lib/prospectionSettings";
 
-const PROSPECTION_COLUMNS = ["New", "Onboarding", "Active"] as const;
+const NOT_IN_A_COLUMN = "__none__";
+
+type ProspectPartner = {
+  id: string;
+  name: string;
+  ownerId?: string | null;
+  owner?: string | null;
+  status?: string | null;
+  prospectionStage?: string | null;
+  partnerType?: string | null;
+  qualifyingLevel?: string | null;
+  programName?: string | null;
+  country?: string | null;
+  createdAt?: string | null;
+};
+
+function cardLine(p: ProspectPartner, field: ProspectionCardFieldId): React.ReactNode {
+  switch (field) {
+    case "partnerType":
+      return <p key={field}>Partner type: {p.partnerType || "—"}</p>;
+    case "programLevel":
+      return <p key={field}>Program level: {p.qualifyingLevel || "—"}</p>;
+    case "program":
+      return <p key={field}>Program: {p.programName || "—"}</p>;
+    case "owner":
+      return <p key={field}>Owner: {p.owner || "Unassigned"}</p>;
+    case "country":
+      return <p key={field}>Country: {p.country || "—"}</p>;
+    case "createdAt":
+      return (
+        <p key={field}>
+          Created: {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"}
+        </p>
+      );
+    default:
+      return null;
+  }
+}
 
 export default function PartnerProspectionPage() {
-  const { partners, session, mutate, setGlobalModal, showToast } = usePrm();
+  const { partners, session, settings, mutate, setGlobalModal } = usePrm();
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
+  const { stages, cardFields } = readProspectionSettings(settings?.account_settings);
 
-  const filtered = partners.filter((p) => {
-    // §3.5.1: Filter on the signed-in user's id
+  const filtered = (partners as ProspectPartner[]).filter((p) => {
     if (activeView === "My Prospects" && p.ownerId !== session?.userId) {
       return false;
     }
@@ -24,23 +64,21 @@ export default function PartnerProspectionPage() {
     return true;
   });
 
+  const unplaced = filtered.filter((p) => !stages.includes(String(p.prospectionStage || "")));
+  const columns = unplaced.length > 0 ? [...stages, NOT_IN_A_COLUMN] : stages;
+
   const moveStage = async (id: string, nextStage: string) => {
     await mutate(
       "UPDATE_PARTNER",
-      {
-        id,
-        data: {
-          prospectionStage: nextStage,
-          status: nextStage === "Active" ? "Active" : nextStage,
-        },
-      },
-      `Partner moved to ${nextStage}`
+      { id, data: { prospectionStage: nextStage } },
+      `Moved to ${nextStage}`
     );
   };
 
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Partners prospection"
         countLabel={`${filtered.length} prospects`}
         views={["All", "My Prospects"]}
@@ -52,29 +90,37 @@ export default function PartnerProspectionPage() {
         primaryActionLabel="New prospect"
         onPrimaryAction={() => setGlobalModal("add_partner")}
         extraRightControls={
-          <button
-            onClick={() => showToast("Board column layout customized")}
+          <Link
+            href="/account/partners"
             className="text-xs font-semibold text-blue-600 hover:underline mr-2"
           >
             customize board
-          </button>
+          </Link>
         }
       />
 
-      <div className="max-w-[1440px] mx-auto px-6 py-5 grid grid-cols-1 md:grid-cols-3 gap-5">
-        {PROSPECTION_COLUMNS.map((col) => {
-          const items = filtered.filter((p) => p.prospectionStage === col);
+      <div className="max-w-[1440px] mx-auto px-6 py-5 flex gap-5 overflow-x-auto">
+        {columns.map((col) => {
+          const items =
+            col === NOT_IN_A_COLUMN
+              ? unplaced
+              : filtered.filter((p) => p.prospectionStage === col);
           return (
             <div
               key={col}
-              className="bg-slate-100/80 rounded-xl border border-slate-200 p-4 flex flex-col space-y-3"
+              className="bg-slate-100/80 rounded-xl border border-slate-200 p-4 flex flex-col space-y-3 min-w-[260px] flex-1"
             >
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <span className="font-bold text-sm text-slate-900">{col}</span>
+                <span className="font-bold text-sm text-slate-900">
+                  {col === NOT_IN_A_COLUMN ? "Not in a column" : col}
+                </span>
                 <span className="px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-700 rounded-full">
                   {items.length}
                 </span>
               </div>
+              {items.length === 0 && (
+                <p className="text-xs text-slate-400">No partners</p>
+              )}
               <div className="space-y-3">
                 {items.map((p) => (
                   <div
@@ -88,32 +134,31 @@ export default function PartnerProspectionPage() {
                       >
                         {p.name}
                       </Link>
-                      <StatusBadge status={p.status} />
+                      {cardFields.includes("status") && p.status && (
+                        <StatusBadge status={p.status} />
+                      )}
                     </div>
                     <div className="text-slate-600 space-y-0.5">
-                      <p>Partner type: {p.partnerType || "—"}</p>
-                      <p>Program level: {p.qualifyingLevel || "Standard"}</p>
+                      {cardFields.filter((f) => f !== "status").map((f) => cardLine(p, f))}
                     </div>
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">
-                        Owner: {p.owner || "Unassigned"}
-                      </span>
-                      {col !== "Active" && (
-                        <button
-                          onClick={() =>
-                            moveStage(
-                              p.id,
-                              col === "New" ? "Onboarding" : "Active"
-                            )
-                          }
-                          className="text-blue-600 hover:text-blue-800 font-semibold flex items-center space-x-1"
-                        >
-                          <span>
-                            Move to {col === "New" ? "Onboarding" : "Active"}
-                          </span>
-                          <ArrowRight className="w-3 h-3" />
-                        </button>
-                      )}
+                    <div className="pt-2 border-t border-slate-100">
+                      <select
+                        aria-label={`Move ${p.name} to another column`}
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) moveStage(p.id, e.target.value);
+                        }}
+                        className="w-full px-2 py-1 border border-slate-200 rounded-md text-blue-700 font-semibold bg-white"
+                      >
+                        <option value="">Move to…</option>
+                        {stages
+                          .filter((s) => s !== p.prospectionStage)
+                          .map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
                 ))}

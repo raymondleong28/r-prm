@@ -88,6 +88,7 @@ export default function PartnerTeamMembersPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Team members"
         countLabel={`${filtered.length} members`}
         views={["All", "Pending", "Sent", "Expired"]}

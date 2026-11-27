@@ -31,9 +31,6 @@ import {
 } from "../src/lib/prmEngine";
 import {
   loadAndValidateConnectorConfig,
-  enrollTotpMfa,
-  generateTotpCode,
-  verifyTotpOrRecoveryCode,
   encryptBankDetails,
   decryptBankDetails,
   renderEscapedEmailHtml,
@@ -67,6 +64,20 @@ import {
   assertDisposableTestDatabase,
   checkDisposableTestDatabase,
 } from "./testDatabaseGuard";
+import {
+  base32Decode,
+  base32Encode,
+  buildOtpauthUri,
+  consumeRecoveryCode,
+  currentTotpCode,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  isBase32Secret,
+  totpCodeAtTime,
+  verifyTotpCode,
+} from "../src/lib/mfa";
+import { readProspectionSettings } from "../src/lib/prospectionSettings";
+import { escapeCsvCell, rowsToCsv } from "../src/lib/csvExport";
 
 async function runFixtures() {
   // Safety lock: never run the destructive suite against a real database
@@ -498,10 +509,14 @@ async function runFixtures() {
     /FAIL_CLOSED/,
     "Live SMTP driver without credentials must fail closed"
   );
-  const totpSecret = "JBSWY3DPEHPK3PXP";
-  const nowCode = generateTotpCode(totpSecret);
-  const totpResult = verifyTotpOrRecoveryCode(nowCode, totpSecret);
-  assert.equal(totpResult.valid, true, "Generated RFC 6238 TOTP code must verify");
+  // RFC 6238 Appendix B test vectors (SHA-1 key "12345678901234567890", last 6 digits)
+  const rfcSecret = base32Encode(Buffer.from("12345678901234567890", "ascii"));
+  assert.equal(rfcSecret, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "Base32 encoding must follow RFC 4648");
+  assert.equal(totpCodeAtTime(rfcSecret, 59), "287082", "RFC 6238 vector T=59");
+  assert.equal(totpCodeAtTime(rfcSecret, 1111111109), "081804", "RFC 6238 vector T=1111111109");
+  assert.equal(totpCodeAtTime(rfcSecret, 1234567890), "005924", "RFC 6238 vector T=1234567890");
+  assert.equal(totpCodeAtTime(rfcSecret, 2000000000), "279037", "RFC 6238 vector T=2000000000");
+  assert.equal(verifyTotpCode(currentTotpCode(rfcSecret), rfcSecret), true, "Current TOTP code must verify");
   const encBank = encryptBankDetails(JSON.stringify({ iban: "SG99DBS000123456", swift: "DBSSSGSG" }));
   const decBank = JSON.parse(decryptBankDetails(encBank));
   assert.equal(decBank?.iban, "SG99DBS000123456", "AES-256-GCM bank details roundtrip must match");
@@ -733,42 +748,30 @@ async function runFixtures() {
   );
 
   // Fixture 15 (§14.2 Slice 6c): MFA enrollment, valid code, invalid code rejection, and single-use recovery code consumption
-  const enrollment = enrollTotpMfa("alex@r-prm.example.com");
-  assert.ok(enrollment.otpauthUri.includes("otpauth://totp/"), "Enrollment must produce otpauth:// URI");
-  const validTotp = generateTotpCode(enrollment.secret);
-  const consumedSet = new Set<string>();
-  const validCheck = verifyTotpOrRecoveryCode(
-    validTotp,
-    enrollment.secret,
-    enrollment.recoveryCodes,
-    consumedSet
-  );
-  assert.equal(validCheck.valid, true);
-  assert.equal(validCheck.method, "totp");
+  const newSecret = generateTotpSecret();
+  assert.ok(isBase32Secret(newSecret), "Generated secret must be RFC 4648 base32 (A-Z, 2-7)");
+  assert.equal(base32Decode(newSecret).length, 20, "Generated secret must be 160 bits");
+  const otpUri = buildOtpauthUri("Test Co", "alex@r-prm.example.com", newSecret);
+  assert.ok(otpUri.startsWith("otpauth://totp/Test%20Co:alex%40r-prm.example.com?"), "otpauth label");
+  assert.ok(otpUri.includes(`secret=${newSecret}`) && otpUri.includes("issuer=Test+Co"), "otpauth params");
+  assert.equal(verifyTotpCode(currentTotpCode(newSecret), newSecret), true, "Valid code accepted");
+  assert.equal(verifyTotpCode("000000", newSecret, 59), false, "Wrong code rejected");
+  assert.equal(verifyTotpCode("abc123", newSecret), false, "Non-numeric code rejected");
 
-  const invalidCheck = verifyTotpOrRecoveryCode(
-    "000000",
-    enrollment.secret,
-    enrollment.recoveryCodes,
-    consumedSet
+  const recovery = generateRecoveryCodes();
+  assert.equal(recovery.codes.length, 8, "8 recovery codes issued");
+  assert.equal(new Set(recovery.codes).size, 8, "Recovery codes are unique");
+  for (const code of recovery.codes) {
+    assert.ok(!newSecret.includes(code.replace("-", "")), "Recovery codes are independent of the secret");
+  }
+  assert.ok(
+    !JSON.stringify(recovery.hashes).includes(recovery.codes[0].replace("-", "")),
+    "Only hashes of recovery codes are stored"
   );
-  assert.equal(invalidCheck.valid, false, "Invalid 6-digit code must be rejected");
-
-  const recoveryCode = enrollment.recoveryCodes[0];
-  const firstRecoveryUse = verifyTotpOrRecoveryCode(
-    recoveryCode,
-    enrollment.secret,
-    enrollment.recoveryCodes,
-    consumedSet
-  );
-  assert.equal(firstRecoveryUse.valid, true, "First use of recovery code must succeed");
-  assert.equal(firstRecoveryUse.method, "recovery");
-  const secondRecoveryUse = verifyTotpOrRecoveryCode(
-    recoveryCode,
-    enrollment.secret,
-    enrollment.recoveryCodes,
-    consumedSet
-  );
+  const firstRecoveryUse = consumeRecoveryCode(recovery.codes[0].toLowerCase(), recovery.hashes);
+  assert.equal(firstRecoveryUse.valid, true, "First use of recovery code must succeed (case-insensitive)");
+  assert.equal(firstRecoveryUse.remainingHashes.length, 7);
+  const secondRecoveryUse = consumeRecoveryCode(recovery.codes[0], firstRecoveryUse.remainingHashes);
   assert.equal(
     secondRecoveryUse.valid,
     false,
@@ -1471,12 +1474,13 @@ async function runFixtures() {
   }
 
   // F1: MFA required + no code -> login refused (and first-login enrolment issued if no secret yet)
-  const enrolledForAlex = enrollTotpMfa(alexUser.email);
+  const enrolledForAlex = { secret: generateTotpSecret() };
   await prisma.user.update({
     where: { id: alexUser.id },
     data: {
-      mfaSecret: enrolledForAlex.secret,
-      recoveryCodesJson: JSON.stringify(enrolledForAlex.recoveryCodes),
+      mfaSecret: encryptBankDetails(enrolledForAlex.secret),
+      mfaConfirmedAt: new Date(),
+      recoveryCodesJson: JSON.stringify(generateRecoveryCodes().hashes),
     },
   });
   // Ensure requireMfaCoworkers is true in account_settings
@@ -1521,7 +1525,7 @@ async function runFixtures() {
   );
 
   // Attempt login WITH valid TOTP code -> must return 200
-  const validAlexTotp = generateTotpCode(enrolledForAlex.secret);
+  const validAlexTotp = currentTotpCode(enrolledForAlex.secret);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const loginWithMfaReq: any = {
     headers: new Headers({ "content-type": "application/json" }),
@@ -1803,7 +1807,146 @@ async function runFixtures() {
     "✓ Fixture 32 passed (§3.5): Dynamic 12-month timezone chart, required lead-to-deal amount in workspace MYR currency, unassigned scheduler flag, and real non-leaking MFA status verified"
   );
 
-  console.log("\nALL 32 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
+  // Fixture 33 (§3.6 MFA): standard authenticator setup at sign-in survives refresh, secret encrypted,
+  // confirmation returns 8 recovery codes once, codes are single-use, optional MFA is enforced, legacy secrets re-enrol
+  const mfaEmail = `mfa.fixture.${Date.now()}@r-prm.example.com`;
+  const mfaPassword = `Fixture-${Date.now()}-Pw!`;
+  const mfaUser = await prisma.user.create({
+    data: {
+      email: mfaEmail,
+      name: "MFA Fixture",
+      identityType: "coworker",
+      role: "Member",
+      passwordHash: hashPasswordWithRandomSalt(mfaPassword),
+      status: "Active",
+      isTestAccount: true,
+    },
+  });
+  const mfaAcctRow = await prisma.appSetting.findUnique({ where: { key: "account_settings" } });
+  const mfaAcctSaved = mfaAcctRow?.valueJson || "{}";
+  const setRequireMfa = async (required: boolean) => {
+    await prisma.appSetting.upsert({
+      where: { key: "account_settings" },
+      update: { valueJson: JSON.stringify({ ...JSON.parse(mfaAcctSaved), requireMfaCoworkers: required }) },
+      create: { key: "account_settings", valueJson: JSON.stringify({ requireMfaCoworkers: required }) },
+    });
+  };
+  const mfaLogin = async (mfaCode?: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const req: any = {
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ identityType: "coworker", email: mfaEmail, password: mfaPassword, mfaCode }),
+    };
+    const res = await authPost(req);
+    return { status: res.status, json: await res.json() };
+  };
+  try {
+    await setRequireMfa(true);
+    const first = await mfaLogin();
+    assert.equal(first.status, 403, "Required MFA with no setup returns the setup (403)");
+    assert.equal(first.json.mfaEnrollmentRequired, true);
+    assert.ok(first.json.enrollment.qrDataUrl.startsWith("data:image/png;base64,"), "QR code image returned");
+    const setupKey: string = first.json.enrollment.setupKey;
+    const pendingSecret = setupKey.replace(/\s/g, "");
+    assert.ok(isBase32Secret(pendingSecret), "Setup key is standard base32");
+    assert.ok(first.json.enrollment.otpauthUri.includes(`secret=${pendingSecret}`));
+    assert.equal(first.json.recoveryCodes, undefined, "No recovery codes before setup is confirmed");
+
+    const refreshed = await mfaLogin();
+    assert.equal(refreshed.json.enrollment.setupKey, setupKey, "Refreshing shows the same pending setup");
+    const storedPending = await prisma.user.findUnique({ where: { id: mfaUser.id } });
+    assert.ok(storedPending?.mfaSecret?.startsWith("enc:v1:"), "Secret is encrypted at rest");
+    assert.ok(!storedPending?.mfaSecret?.includes(pendingSecret), "Plain secret never stored");
+    assert.equal(storedPending?.mfaConfirmedAt, null, "Setup stays pending until confirmed");
+
+    const wrongFirst = await mfaLogin("000000");
+    assert.equal(wrongFirst.status, 401, "Wrong first code refused");
+    assert.equal(wrongFirst.json.enrollment.setupKey, setupKey, "Setup still shown after a wrong code");
+
+    const confirmed = await mfaLogin(currentTotpCode(pendingSecret));
+    assert.equal(confirmed.status, 200, "Valid first code confirms setup and signs in");
+    assert.equal(confirmed.json.recoveryCodes.length, 8, "8 recovery codes shown once at confirmation");
+    assert.equal(confirmed.json.session.mfaEnrolled, true);
+    const storedConfirmed = await prisma.user.findUnique({ where: { id: mfaUser.id } });
+    assert.ok(storedConfirmed?.mfaConfirmedAt, "Confirmation time recorded");
+    const recoveryList: string[] = confirmed.json.recoveryCodes;
+    assert.ok(
+      !String(storedConfirmed?.recoveryCodesJson).includes(recoveryList[0].replace("-", "")),
+      "Recovery codes stored as hashes only"
+    );
+
+    const noCode = await mfaLogin();
+    assert.equal(noCode.status, 401, "Confirmed MFA requires a code");
+    assert.equal(noCode.json.mfaRequired, true);
+    const withRecovery = await mfaLogin(recoveryList[0]);
+    assert.equal(withRecovery.status, 200, "Recovery code signs in");
+    assert.equal(withRecovery.json.recoveryCodesLeft, 7, "Remaining recovery codes reported");
+    const reusedRecovery = await mfaLogin(recoveryList[0]);
+    assert.equal(reusedRecovery.status, 401, "Recovery code works only once");
+
+    await setRequireMfa(false);
+    const optional = await mfaLogin();
+    assert.equal(optional.status, 401, "MFA the user switched on is enforced even when policy doesn't require it");
+    const optionalOk = await mfaLogin(currentTotpCode(pendingSecret));
+    assert.equal(optionalOk.status, 200);
+
+    // Legacy secret (old non-standard format, plaintext) is treated as not set up
+    await prisma.user.update({
+      where: { id: mfaUser.id },
+      data: { mfaSecret: "AC8CA9130B119E253393", mfaConfirmedAt: new Date(), recoveryCodesJson: "[]" },
+    });
+    const legacyOptional = await mfaLogin();
+    assert.equal(legacyOptional.status, 200, "Legacy secret no longer blocks sign-in when MFA isn't required");
+    await setRequireMfa(true);
+    const legacyRequired = await mfaLogin();
+    assert.equal(legacyRequired.status, 403, "Legacy secret triggers a fresh standard setup when required");
+    assert.notEqual(legacyRequired.json.enrollment.setupKey.replace(/\s/g, ""), "AC8CA9130B119E253393");
+  } finally {
+    await prisma.appSetting.update({ where: { key: "account_settings" }, data: { valueJson: mfaAcctSaved } }).catch(() => undefined);
+    await prisma.session.deleteMany({ where: { userId: mfaUser.id } });
+    await prisma.user.delete({ where: { id: mfaUser.id } });
+  }
+  console.log(
+    "✓ Fixture 33 passed (§3.6 MFA): standard base32 setup with QR, refresh-safe pending setup, encrypted secret, 8 hashed single-use recovery codes, optional MFA enforced, legacy secrets re-enrol"
+  );
+
+  // Fixture 34 (§3.6): prospection board settings, honest partner-type default, CSV export escaping
+  assert.deepEqual(readProspectionSettings({}).stages, ["New", "Onboarding", "Active"], "Default board columns");
+  assert.deepEqual(
+    readProspectionSettings({ prospectionStages: [" Lead ", "lead", "Qualified", ""] }).stages,
+    ["Lead", "Qualified"],
+    "Saved columns are trimmed and de-duplicated"
+  );
+  assert.deepEqual(
+    readProspectionSettings({ prospectionCardFields: ["owner", "bogus", "country"] }).cardFields,
+    ["owner", "country"],
+    "Unknown card fields are ignored"
+  );
+  assert.deepEqual(readProspectionSettings({ prospectionCardFields: [] }).cardFields, [], "All card fields can be hidden");
+  const typelessProgram = await prisma.program.findFirst();
+  const typelessName = `Typeless Partner ${Date.now()}`;
+  const typelessRes = await executeResourceMutation(mockAdminSession, "CREATE_PARTNER", {
+    name: typelessName,
+    programId: typelessProgram?.id,
+  });
+  assert.equal(typelessRes.status, 200, "Partner without a type can be created");
+  const typelessRow = await prisma.partner.findFirst({ where: { name: typelessName } });
+  assert.equal(typelessRow?.partnerType, "", "A partner created without a type has no made-up type");
+  if (typelessRow) await prisma.partner.delete({ where: { id: typelessRow.id } });
+  assert.equal(escapeCsvCell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"", "Formula cells are neutralised and quoted");
+  assert.equal(escapeCsvCell("+65 1234"), "'+65 1234", "Leading + is neutralised");
+  assert.equal(escapeCsvCell("a,b"), "\"a,b\"", "Commas are quoted");
+  const exportCsv = rowsToCsv([
+    { id: "1", name: "Acme", levelsJson: "[]", leadFormTokenHash: "x", amount: 100 },
+    { id: "2", name: "-Beta", amount: 200, nested: { a: 1 } },
+  ]);
+  assert.equal(exportCsv.split("\r\n")[0], "id,name,amount", "Internal JSON, hash and nested columns are not exported");
+  assert.equal(exportCsv.split("\r\n")[2], "2,'-Beta,200");
+  console.log(
+    "✓ Fixture 34 passed (§3.6): configurable prospection columns and card fields, no made-up partner type, CSV export with formula escaping"
+  );
+
+  console.log("\nALL 34 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
   await prisma.$disconnect();
 }
 

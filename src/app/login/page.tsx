@@ -2,16 +2,21 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import {
+  MfaSetupPanel,
+  RecoveryCodesPanel,
+  type MfaEnrollmentView,
+} from "@/components/MfaPanels";
 import { Shield, AlertCircle } from "lucide-react";
 
 export default function CoworkerLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
-  const [mfaEnrollment, setMfaEnrollment] = useState<{
-    otpauthUri: string;
-    recoveryCodes: string[];
-  } | null>(null);
+  const [mfaEnrollment, setMfaEnrollment] = useState<MfaEnrollmentView | null>(null);
+  const [mfaAsked, setMfaAsked] = useState(false);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [recoveryCodesLeft, setRecoveryCodesLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [branding, setBranding] = useState({
@@ -52,8 +57,21 @@ export default function CoworkerLoginPage() {
       if (!res.ok) {
         if (json.mfaEnrollmentRequired && json.enrollment) {
           setMfaEnrollment(json.enrollment);
+          setMfaAsked(true);
+        } else if (json.mfaRequired) {
+          setMfaAsked(true);
         }
         setError(json.error || "Sign-in failed");
+        setSubmitting(false);
+        return;
+      }
+      if (Array.isArray(json.recoveryCodes) && json.recoveryCodes.length > 0) {
+        setRecoveryCodes(json.recoveryCodes);
+        setSubmitting(false);
+        return;
+      }
+      if (typeof json.recoveryCodesLeft === "number") {
+        setRecoveryCodesLeft(json.recoveryCodesLeft);
         setSubmitting(false);
         return;
       }
@@ -91,29 +109,40 @@ export default function CoworkerLoginPage() {
           </div>
         )}
 
-        {mfaEnrollment && (
-          <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 space-y-2 text-[11px] text-slate-800">
-            <p className="font-bold text-blue-900">
-              First-Login MFA Enrolment Required
-            </p>
+        {recoveryCodes && (
+          <RecoveryCodesPanel
+            codes={recoveryCodes}
+            onContinue={() => {
+              window.location.href = "/dashboard";
+            }}
+          />
+        )}
+
+        {recoveryCodesLeft !== null && (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-3 text-[11px] text-slate-800">
+            <p className="font-bold text-amber-900">You signed in with a recovery code</p>
             <p>
-              Add this URI to your Authenticator app or enter one of your
-              recovery codes below:
+              You have {recoveryCodesLeft} recovery code{recoveryCodesLeft === 1 ? "" : "s"} left.
+              {recoveryCodesLeft <= 3 &&
+                " Get new ones from Account Settings → Security once you have your authenticator again."}
             </p>
-            <p className="font-mono bg-white p-2 rounded border border-blue-200 break-all">
-              {mfaEnrollment.otpauthUri}
-            </p>
-            <p className="font-semibold text-blue-800">
-              One-Time Recovery Codes:
-            </p>
-            <div className="grid grid-cols-2 gap-1 font-mono bg-white p-2 rounded border border-blue-200">
-              {mfaEnrollment.recoveryCodes.map((c) => (
-                <span key={c}>{c}</span>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/dashboard";
+              }}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm"
+            >
+              Continue
+            </button>
           </div>
         )}
 
+        {!recoveryCodes && recoveryCodesLeft === null && mfaEnrollment && (
+          <MfaSetupPanel enrollment={mfaEnrollment} />
+        )}
+
+        {!recoveryCodes && recoveryCodesLeft === null && (
         <form onSubmit={handleLogin} className="space-y-3.5">
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
@@ -141,17 +170,25 @@ export default function CoworkerLoginPage() {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg"
             />
           </div>
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">
-              Authenticator Code / Recovery Code (Optional unless enforced)
-            </label>
-            <input
-              value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value)}
-              placeholder="6-digit TOTP or recovery code"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
-            />
-          </div>
+          {mfaAsked && (
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                {mfaEnrollment
+                  ? "6-digit code from your authenticator app *"
+                  : "Authenticator code or recovery code *"}
+              </label>
+              <input
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode={mfaEnrollment ? "numeric" : "text"}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                placeholder={mfaEnrollment ? "123456" : "123456 or ABCDE-FGHIJ"}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
+              />
+            </div>
+          )}
           <button
             type="submit"
             disabled={submitting}
@@ -160,6 +197,7 @@ export default function CoworkerLoginPage() {
             {submitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        )}
 
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-slate-500">
           <span className="flex items-center space-x-1">

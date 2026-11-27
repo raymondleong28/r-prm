@@ -37,6 +37,7 @@ export default function LeadsListPage() {
   return (
     <div>
       <EntityListToolbar
+        exportRows={filtered}
         title="Leads"
         countLabel={`${filtered.length} leads`}
         views={["All", "My Leads", "Pending Leads"]}

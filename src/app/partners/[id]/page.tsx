@@ -362,6 +362,7 @@ export default function PartnerDetailPage() {
                 <div>
                   <label className="text-slate-500 block">Partner type</label>
                   <input
+                    list="partner-type-options"
                     value={editFields.partnerType || ""}
                     onChange={(e) =>
                       setEditFields({
@@ -371,6 +372,14 @@ export default function PartnerDetailPage() {
                     }
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded"
                   />
+                  <datalist id="partner-type-options">
+                    {(Array.isArray(settings?.account_settings?.partnerTypes)
+                      ? (settings.account_settings.partnerTypes as string[])
+                      : []
+                    ).map((t) => (
+                      <option key={t} value={t} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="text-slate-500 block">Country</label>
