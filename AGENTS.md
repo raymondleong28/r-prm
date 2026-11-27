@@ -146,6 +146,38 @@ The database starts empty, but the screens still carry demo data written into th
 
 ---
 
+### 3.6 Behaviour gaps found 28 Nov 2026 (side-by-side check against the reference product, read-only)
+Writer from 28 Nov 2026: Claude (Ray's Claude session). One writer at a time still applies.
+
+**Done in Round 1 (commits `9baa736`, `c81ddbe`) — keep green:**
+- Test safety lock: `npm test` refuses unless the database name contains `test` or `verify`.
+- Two-step login: standard base32 TOTP (RFC 6238 vectors in Fixture 11), QR code, refresh-safe pending setup, secret encrypted at rest, 8 hashed single-use recovery codes, user-enabled MFA enforced, lockout on wrong codes, admin reset (`admin_reset_mfa`), Security-tab setup / new codes / turn off.
+- Prospection board columns and card fields stored in Partner settings; partner types saved; no made-up "Standard" level or "Reseller" type.
+- Export on every list downloads real CSV (formula-escaped, no internal fields). Data sources show Creation date.
+
+**Rule from now on: no fake controls.** A button either does the real thing or is removed. Still fake (each shows only a toast) — fix or remove:
+1. Self-invoice "Download PDF" on payout detail (no PDF is generated).
+2. API tokens in Account → Integration (made with `Math.random()`, never usable, "SHA-256 hashed" label untrue). Use `crypto.randomBytes`, store a hash, check it on API requests, show once.
+3. List toolbar: "Manage views", date filter, view actions, "edit columns", "Show: 25 items" — make real or remove.
+4. Deals board "customize" (stages), CRM "sync logs" buttons on lead/deal detail, tracking-snippet "verify".
+5. List/board toggle on Prospection and Deals (the reference product has both views).
+
+**Reward rules — staged rounds (the biggest gap):**
+The reference product's reward form, observed field by field:
+- Reward types Cash / Credit / Gift card / Coupon share one form (type is a label). R-PRM already matches.
+- 9 triggers: customer property changed; deal contract started; deal stage changed; new customer; new lead accepted; new transaction; transaction added on a customer; transaction added on a deal; website visit from a partner link. R-PRM has 4.
+- Amount: fixed amount in a currency, or % of **any numeric transaction field** (incl. custom fields). R-PRM: % of amount only.
+- "Reward every time?" Yes, or No → conditions, any combination: month range from the customer's first transaction ("month 1 to 12", inclusive); transaction count range ("3rd to 15th"); running sum of transactions; **any transaction property** (incl. custom, e.g. billing frequency contains "month", billing period = 1); **any customer property**.
+- Custom properties on the reward itself.
+- Real pattern to reproduce exactly (a recurring program, monthly plan): "A% of amount on the 3rd–15th transaction added on a customer if billing frequency contains month and billing period = 1"; separate rules for quarterly (1st–4th), half-yearly (1st–2nd), yearly (1st–1st), then B% rules for the following periods. Use invented rates in the repository; Ray supplies the real ones for his own check.
+
+Rounds (each: tests first, one commit, all fixtures green, Ray checks before the next):
+- **R2 — engine:** rule model with the 9 triggers, conditions (property / count range / sum / month range, AND-combined), "% of field" amounts; migrate existing rules without changing any amount (fixtures 3a–3d and Apex/Synthetix amounts unchanged).
+- **R3 — rule form:** builder UI matching the fields above; edit existing rules; custom reward properties.
+- **R4 — proof:** rebuild the recurring-program rules above with synthetic data, feed 24 months of monthly / quarterly / half-yearly / yearly invoices, assert every reward amount and date. Ray confirms expected numbers first (§1.5).
+
+**Done when (§3.6):** no control in the app only shows a toast; R4 fixture passes with Ray-confirmed numbers.
+
 ## 4. Product outline (for `docs/PRODUCT.md`)
 
 - **Programs and tiers:** programs with tiers; each tier has commission rules, benefits and requirements (e.g. minimum revenue, certified people). Duplicate and archive programs. Application form per program; automated emails per trigger (application received, accepted with activation link, rejected with reason).
@@ -200,6 +232,10 @@ The database starts empty, but the screens still carry demo data written into th
 | `.env.example` vs settings read in code | Every setting listed |
 | `main` branch | Unchanged by the agent |
 | §3.5 checks (demo/organisation names, `"SGD"`) | Nothing found |
+| `npm test` with `.env` pointing at a database not named *test*/*verify* | Refuses, exit 2 |
+| Two-step login with Google/Microsoft Authenticator | QR scan works; 6-digit codes accepted; refresh keeps the same setup; 8 recovery codes shown once |
+| Any toast-only button (`grep` for `showToast` as the only action) | None |
+| Recurring-program reward rules (R4 fixture) | Every amount and date matches Ray-confirmed numbers |
 | Fresh workspace "Test Co" in MYR | Every screen shows Test Co and MYR; no demo names; chart months end at the current month |
 | Convert lead to deal | Asks for amount; no fixed value |
 | `develop` on GitHub | Pushed; matches the local branch |
