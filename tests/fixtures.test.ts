@@ -63,8 +63,33 @@ import {
   matchAccountListsByDomainAndName,
   handleCsvImportMutation,
 } from "../src/lib/importAndEmailHelpers";
+import {
+  assertDisposableTestDatabase,
+  checkDisposableTestDatabase,
+} from "./testDatabaseGuard";
 
 async function runFixtures() {
+  // Safety lock: never run the destructive suite against a real database
+  const guardCases: Array<[string | undefined, string | undefined, boolean]> = [
+    ["postgresql://u@127.0.0.1:5432/rprm?schema=public", "development", false],
+    ["postgresql://u@127.0.0.1:5432/rprm_real", "development", false],
+    ["postgresql://u@127.0.0.1:5432/rprm_test", "production", false],
+    [undefined, "development", false],
+    ["postgresql://u@127.0.0.1:5432/rprm_test?schema=public", "development", true],
+    ["postgresql://u@127.0.0.1:5432/rprm_fresh_verify_42", undefined, true],
+  ];
+  for (const [url, env, expected] of guardCases) {
+    assert.equal(
+      checkDisposableTestDatabase(url, env).ok,
+      expected,
+      `Test-database guard for ${url} (NODE_ENV=${env}) should be ${expected}`
+    );
+  }
+  const testDatabaseName = assertDisposableTestDatabase();
+  console.log(
+    `✓ Safety lock: running against disposable database "${testDatabaseName}"`
+  );
+
   console.log("Running R-PRM Known-Answer Fixtures...");
 
   // Ensure baseline demo dataset is present when running against an empty database (e.g. fresh-clone check)

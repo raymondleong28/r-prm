@@ -71,7 +71,7 @@ To populate a local development database with synthetic demo records (using the 
 |---|---|
 | `npm run dev` | Start local Next.js development server bound to `127.0.0.1:3000` |
 | `npm run typecheck` | Run TypeScript compiler validation (`tsc --noEmit`) |
-| `npm test` | Run automated fixture and security verification suite (`tests/fixtures.test.ts`) |
+| `npm test` | Run the fixture and security suite (`tests/fixtures.test.ts`). **It deletes and reseeds data**, so it refuses to run unless `DATABASE_URL` points to a database whose name contains `test` or `verify`. Easiest: `./scripts/verify-fresh-clone.sh` |
 | `npm run build` | Build production Next.js application |
 | `npm run start` | Start production server bound to `127.0.0.1:3000` |
 | `npm run db:migrate` | Deploy committed Prisma migrations (`prisma migrate deploy`) |

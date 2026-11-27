@@ -26,7 +26,7 @@
 ## Running Commands (Bound to `127.0.0.1`)
 - `npm run dev` — Start development server on `http://127.0.0.1:3000`
 - `npm run typecheck` — Run TypeScript compiler validation (`tsc --noEmit`)
-- `npm test` — Run automated fixture suite (`tests/fixtures.test.ts`)
+- `npm test` — Run the fixture suite (`tests/fixtures.test.ts`). Destructive: refuses unless the database name contains `test` or `verify`. Use `./scripts/verify-fresh-clone.sh` for a throwaway database.
 - `npm run build` — Build production Next.js bundle
 - `npm run start` — Start production server bound to `127.0.0.1:3000`
 - `npm run db:migrate` — Apply committed Prisma migrations (`prisma migrate deploy`)
