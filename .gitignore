@@ -30,3 +30,7 @@ prisma/*.db-journal
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Uploaded files (kept on disk, not tracked in git)
+storage/uploads/*
+!storage/uploads/.gitkeep
