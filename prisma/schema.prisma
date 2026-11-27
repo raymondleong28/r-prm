@@ -1,0 +1,395 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Program {
+  id                   String    @id @default(cuid())
+  name                 String
+  ownerId              String?
+  owner                String    @default("")
+  onboardingPipelineId String    @default("")
+  levelsJson           String    // JSON array of levels with rewards, benefits, requirements
+  partnerCount         Int       @default(0)
+  pendingApplications  Int       @default(0)
+  submittedLeads365d   Int       @default(0)
+  registeredDeals365d  Int       @default(0)
+  sourcedRevenue365d   Int       @default(0)
+  influencedRev365d    Int       @default(0)
+  autoEmailsJson       String    // signup, accepted, rejected email config
+  termsRequired        Boolean   @default(true)
+  termsUrl             String    @default("")
+  revenueStrategy      String?
+  permissionsJson      String    // Role permissions matrix (Manager, Sales Rep, Stakeholder)
+  createdAt            DateTime  @default(now())
+  partners             Partner[]
+}
+
+model Partner {
+  id                   String   @id @default(cuid())
+  name                 String
+  ownerId              String?
+  owner                String   @default("")
+  groupName            String   @default("")
+  programId            String?
+  program              Program? @relation(fields: [programId], references: [id])
+  programName          String   @default("")
+  qualifyingLevel      String   @default("")
+  status               String   @default("Active") // Active, Pending, Onboarding, Inactive
+  onboardingStatus     String   @default("Not started") // Not started, In progress, Completed
+  onboardingPipeline   String   @default("")
+  onboardingStage      String   @default("")
+  prospectionStage     String   @default("New") // New, Onboarding, Active
+  partnerType          String   @default("Reseller")
+  country              String   @default("")
+  language             String   @default("English")
+  currency             String
+  activeSince          String   @default("")
+  lastSeenDate         String   @default("")
+  lastSubmittedLead    String   @default("")
+  submittedLeads365d   Int      @default(0)
+  registeredDeals365d  Int      @default(0)
+  pendingRewardsAll    Int      @default(0)
+  sourcedRevenue365d   Int      @default(0)
+  influencedRev365d    Int      @default(0)
+  contactFirstName     String   @default("")
+  contactLastName      String   @default("")
+  contactEmail         String   @default("")
+  contactJobTitle      String   @default("")
+  contactPhone         String   @default("")
+  portalAccess         Boolean  @default(true)
+  companyWebsite       String   @default("")
+  companyAddress       String   @default("")
+  employeeCount        String   @default("")
+  industry             String   @default("")
+  bankDetailsJson      String   @default("{}")
+  leadFormTokenHash    String?  @unique
+  leadFormTokenCipher  String   @default("")
+  createdAt            DateTime @default(now())
+}
+
+model PartnerTeamMember {
+  id          String   @id @default(cuid())
+  name        String
+  email       String
+  jobTitle    String
+  phone       String
+  partnerName String
+  role        String   @default("Manager") // Manager, Sales Rep, Stakeholder
+  status      String   @default("Active")  // Active, Pending, Sent, Expired
+  invitedAt   String   @default("")
+  createdAt   DateTime @default(now())
+}
+
+model Lead {
+  id                String   @id @default(cuid())
+  firstName         String
+  lastName          String
+  company           String
+  jobTitle          String   @default("")
+  email             String
+  phone             String   @default("")
+  country           String   @default("")
+  retailBrand       String   @default("")
+  outletsCount      Int      @default(0)
+  website           String   @default("")
+  posSolution       String   @default("")
+  remarks           String   @default("")
+  status            String   @default("Pending") // Pending, Accepted, Refused, Converted
+  ownerId           String?
+  owner             String   @default("")
+  source            String   @default("Partner Portal") // Partner Portal, Shared, Inbound Link
+  sourcePartnerId   String?
+  sourcePartnerName String   @default("")
+  assignedPartner   String   @default("")
+  assignedContact   String   @default("")
+  assignedDate      String   @default("")
+  acceptedBy        String   @default("")
+  acceptedDate      String   @default("")
+  deadline          String   @default("")
+  convertedDealId   String?
+  hubspotSyncedAt   String   @default("")
+  createdAt         DateTime @default(now())
+}
+
+model Deal {
+  id                  String   @id @default(cuid())
+  name                String
+  ownerId             String?
+  owner               String   @default("")
+  clientName          String
+  company             String
+  amount              Int
+  currency            String
+  amountBase          Int
+  partnerName         String
+  partnerId           String?
+  assignedContact     String   @default("")
+  status              String   @default("Pending") // Pending, Accepted, Refused
+  stage               String   @default("Discovery Stage")
+  // 10 Stages: To Work On, Appointment Scheduled, Holding, Discovery Stage, Presentation Stage, Quotation Stage, Negotiation Stage, Closing Stage, Closed Won, Closed Lost
+  stageEnteredAt      String   @default("")
+  source              String   @default("Partner Registration")
+  sourcePartnerName   String
+  closeDate           String   @default("")
+  expirationDate      String   @default("")
+  programName         String   @default("")
+  dealType            String   @default("New Business")
+  subscriptionPlan    String   @default("")
+  comment             String   @default("")
+  sourceLeadId        String?
+  hubspotDealId       String   @default("")
+  contractStart       String   @default("")
+  contractEnd         String   @default("")
+  lineItemsJson       String   @default("[]")
+  createdAt           DateTime @default(now())
+}
+
+model Customer {
+  id                String   @id @default(cuid())
+  name              String
+  email             String
+  status            String   @default("Paying") // Paying, Trial, Canceled
+  source            String   @default("Deal Conversion")
+  sourcePartnerName String
+  becamePayingDate  String   @default("")
+  bbid              String   @default("")
+  sourceDealId      String   @default("")
+  subscriptionPlan  String   @default("")
+  billingFrequency  String   @default("")
+  billingPeriod     String   @default("")
+  canceledDate      String   @default("")
+  transactionsCount Int      @default(0)
+  revenuesBase      Int      @default(0)
+  createdAt         DateTime @default(now())
+}
+
+model Transaction {
+  id           String   @id @default(cuid())
+  name         String
+  amount       Int
+  currency     String
+  amountBase   Int
+  partnerName  String
+  customerName String
+  dealName     String
+  monthKey     String   @default("")
+  createdAt    DateTime @default(now())
+}
+
+model Reward {
+  id             String   @id @default(cuid())
+  rewardNumber   String
+  partnerName    String
+  recipientName  String
+  type           String   @default("Cash")
+  amount         Int
+  currency       String
+  amountBase     Int
+  fromActivity   String
+  fromRewardRule String   @default("")
+  status         String   @default("Pending") // Pending, Accepted, Paid, Refused
+  payoutNumber   String   @default("")
+  payoutId       String?
+  payout         Payout?  @relation(fields: [payoutId], references: [id])
+  comment        String   @default("")
+  createdAt      DateTime @default(now())
+}
+
+model Payout {
+  id           String   @id @default(cuid())
+  payoutNumber String
+  name         String
+  partnerName  String
+  amount       Int
+  currency     String
+  amountBase   Int
+  periodFrom   String   @default("")
+  periodTo     String   @default("")
+  rewardsCount Int      @default(0)
+  status       String   @default("Ready") // Draft, Pending, Ready, Paid
+  invoiceRef   String   @default("")
+  paidDate     String   @default("")
+  createdAt    DateTime @default(now())
+  rewards      Reward[]
+}
+
+model Task {
+  id              String   @id @default(cuid())
+  name            String
+  status          String   @default("Upcoming") // Overdue, Due Today, Upcoming, Completed
+  type            String   @default("Follow-up") // Follow-up, Call, Onboarding, Review
+  dueDate         String
+  dueTime         String   @default("09:00 AM")
+  description     String
+  assignedToId    String?
+  assignedTo      String   @default("")
+  associationType String   @default("Partner") // Partner, Lead, Deal
+  associationName String
+  createdBy       String   @default("")
+  completedBy     String   @default("")
+  completedDate   String   @default("")
+  createdAt       DateTime @default(now())
+}
+
+model BusinessPlan {
+  id            String   @id @default(cuid())
+  name          String
+  partnerName   String
+  partnerOwner  String   @default("")
+  status        String   @default("Active") // Draft, Active, Completed
+  description   String
+  startDate     String
+  endDate       String
+  achievedPct   Int      @default(0)
+  targetRevBase Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+model AccountRecord {
+  id                 String   @id @default(cuid())
+  accountName        String
+  type               String   @default("Prospect") // Customer, Opportunity, Prospect
+  ownerName          String   @default("")
+  ownerEmail         String   @default("")
+  source             String   @default("")
+  importedDate       String   @default("")
+  hasOverlap         Boolean  @default(false)
+  partnerName        String   @default("")
+  partnerAccountName String   @default("")
+  partnerAccountType String   @default("Customer") // Customer, Opportunity, Prospect
+  partnerOwnerName   String   @default("")
+  partnerOwnerEmail  String   @default("")
+  overlapDate        String   @default("")
+  createdAt          DateTime @default(now())
+}
+
+model Collaboration {
+  id               String   @id @default(cuid())
+  name             String
+  status           String   @default("New") // New, Accepted, Closed
+  ownerId          String?
+  owner            String   @default("")
+  partnerName      String
+  assignedContact  String
+  accountName      String
+  lastActivityDate String   @default("")
+  createdAt        DateTime @default(now())
+}
+
+model DataSource {
+  id               String   @id @default(cuid())
+  name             String
+  status           String   @default("Active")
+  sharedWith       String   @default("")
+  type             String   @default("CSV Upload") // CSV Upload, CRM Connected
+  accountType      String   @default("")
+  lastImportedDate String   @default("")
+  createdBy        String   @default("")
+  createdAt        DateTime @default(now())
+}
+
+model TrackingLink {
+  id                String   @id @default(cuid())
+  name              String
+  targetUrl         String
+  programId         String
+  partnerName       String   @default("")
+  uniqueVisitors    Int      @default(0)
+  leadsCount        Int      @default(0)
+  customersCount    Int      @default(0)
+  transactionsCount Int      @default(0)
+  revenuesBase      Int      @default(0)
+  createdAt         DateTime @default(now())
+}
+
+model ManageItem {
+  id           String   @id @default(cuid())
+  category     String   // assets, certifications, commission_templates, email_templates, groups, help_articles, integrations, news, partner_dashboards, directories, onboarding_pipelines, products, team, workflows, custom_properties, api_tokens
+  name         String
+  subtitle     String   @default("")
+  status       String   @default("Active")
+  metadataJson String   @default("{}")
+  createdAt    DateTime @default(now())
+}
+
+model NoteItem {
+  id         String   @id @default(cuid())
+  entityType String   // partner, lead, deal
+  entityId   String
+  author     String   @default("")
+  content    String
+  isShared   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model AppSetting {
+  key       String   @id
+  valueJson String
+  updatedAt DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String   @default("")
+  actorRole  String   @default("")
+  action     String   // CREATE, UPDATE, DELETE, IMPERSONATE, VALIDATE, REFUSE, CLAWBACK, AUTH
+  objectType String   // Partner, Program, Lead, Deal, Reward, Payout, Asset, Session, etc.
+  objectId   String
+  summary    String
+  diffJson   String   @default("{}")
+  createdAt  DateTime @default(now())
+}
+
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  name                String
+  identityType        String    // "coworker" | "partner"
+  role                String    // "Administrator" | "Manager" | "SalesRep" | "Stakeholder"
+  partnerId           String?
+  partnerName         String?
+  isMainContact       Boolean   @default(false)
+  passwordHash        String    // format: "scrypt:<randomSaltHex>:<derivedKeyHex>"
+  mfaSecret           String?
+  recoveryCodesJson   String    @default("[]")
+  status              String    @default("Active") // Active, Pending, Disabled
+  isTestAccount       Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  sessions            Session[]
+}
+
+model Session {
+  id                     String    @id
+  userId                 String
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatingPartnerId String?
+  createdAt              DateTime  @default(now())
+  expiresAt              DateTime
+  revokedAt              DateTime?
+}
+
+model ActivationToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  email       String
+  name        String
+  partnerId   String?
+  partnerName String?
+  role        String    @default("Manager")
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model LoginLockout {
+  key         String    @id
+  failures    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}

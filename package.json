@@ -1,0 +1,38 @@
+{
+  "name": "r-prm",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "build": "next build",
+    "start": "next start -H 127.0.0.1",
+    "test": "tsx tests/fixtures.test.ts",
+    "db:migrate": "prisma migrate deploy",
+    "demo:seed": "tsx prisma/seed.ts",
+    "scheduler": "tsx scripts/run-scheduler.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "lucide-react": "^0.454.0",
+    "next": "^14.2.35",
+    "nodemailer": "^10.6.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "prisma": "5.22.0",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
