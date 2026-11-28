@@ -184,10 +184,15 @@ The reference product's reward form, observed field by field:
 - Transactions link to their customer record (`Transaction.customerId`); unique reward numbers from a sequence; `Reward.sourceKey` stops a rule paying twice for the same event.
 - A customer counts as the partner's client unless it had already cancelled when the transaction happened.
 
+**Done in R3 (Fixture 37) — keep green:**
+- Rule form (`src/components/ProgramRuleModal.tsx`, helpers in `src/lib/ruleEditing.ts`): label, description, reward type (cash / credit / gift card / coupon), trigger, "reward every transaction?" Yes / No, conditions added and removed in any combination, amount (fixed with currency, % of a number field, or one month's subscription), optional rate periods, validation and refund reversal, a one-line summary of what the rule pays, and save checks.
+- Editing an older rule turns its start month / duration into a visible month-range condition with the same effect; older field conditions the form can't edit are kept exactly as saved. Fixture 37 proves every template and every seeded rule pays the same after editing.
+- Saving a template from Manage keeps all its settings (it used to reset them to "recurring, 12 months").
+- Still open: custom properties on the reward itself (comes with R2b custom fields).
+
 Rounds (each: tests first, one commit, all fixtures green, Ray checks before the next):
 - **R2b — custom fields:** custom property values stored on records, shown on forms and detail pages, usable in filters, export, rule conditions and "% of field".
 - **R2c — remaining triggers:** deal stage changed (with editable deal stages), deal contract started, new customer, customer field changed, website visit (with referral link tracking — needs a public address, so it can wait for go-live).
-- **R3 — rule form:** builder UI matching the fields above; edit existing rules; custom reward properties.
 - **R4 — proof:** rebuild the recurring-program rules above with synthetic data, feed 24 months of monthly / quarterly / half-yearly / yearly invoices, assert every reward amount and date. Ray confirms expected numbers first (§1.5).
 
 **Done when (§3.6):** no control in the app only shows a toast; R4 fixture passes with Ray-confirmed numbers.

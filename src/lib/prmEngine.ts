@@ -185,6 +185,7 @@ export interface RateStep {
 export interface StructuredRewardRule {
   id: string;
   title: string;
+  description?: string;
   trigger:
     | "transaction_paid"
     | "transaction_added_customer"
@@ -202,7 +203,8 @@ export interface StructuredRewardRule {
   amountMode: "percentage" | "fixed" | "one_month_subscription";
   rateOrAmount: number;
   currency?: string;
-  duration: "one_off" | "recurring";
+  /** Older rules only: one-off or recurring from a start month. New rules use a month-range condition. */
+  duration?: "one_off" | "recurring";
   startOffsetMonths?: number;
   durationMonths?: number;
   rateSteps?: RateStep[];

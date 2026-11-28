@@ -13,6 +13,7 @@ import {
 } from "../src/lib/partnerSerializer";
 import {
   DEFAULT_COMMISSION_TEMPLATES,
+  normalizeRewardRule,
   convertWithDatedFx,
   computePartnerKpis,
   computeLast12Months,
@@ -76,7 +77,8 @@ import {
   verifyTotpCode,
 } from "../src/lib/mfa";
 import { readProspectionSettings } from "../src/lib/prospectionSettings";
-import { evaluateRuleForInvoice, sortableMonthKey, monthsBetween } from "../src/lib/rewardRules";
+import { evaluateRuleForInvoice, sortableMonthKey, monthsBetween, evaluateRuleAmount, type RewardEvent } from "../src/lib/rewardRules";
+import { toEditableRule, describeRule, validateRule } from "../src/lib/ruleEditing";
 import { generateRewardsForTransaction } from "../src/lib/rewardGeneration";
 import { escapeCsvCell, rowsToCsv } from "../src/lib/csvExport";
 import {
@@ -2240,7 +2242,85 @@ async function runFixtures() {
     "✓ Fixture 36 passed (§3.6 R2a): live engine applies month windows and 20%→10% steps, transaction count, running total, customer fields, deal-won and lead-accepted triggers; unique reward numbers; no double-paying"
   );
 
-  console.log("\nALL 36 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
+  // Fixture 37 (§3.6 R3): opening a rule in the builder and saving it unchanged never changes what it pays;
+  // the one-line summary and the save checks behave as written
+  const dbPrograms37 = await prisma.program.findMany();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rules37: any[] = [
+    ...Object.values(DEFAULT_COMMISSION_TEMPLATES),
+    ...dbPrograms37.flatMap((p) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (JSON.parse(p.levelsJson || "[]") as any[]).flatMap((l) => l.rewards || []);
+      } catch {
+        return [];
+      }
+    }),
+    { id: "l37-a", title: "Legacy open-ended", trigger: "transaction_paid", valueType: "Cash", amountMode: "percentage", rateOrAmount: 12, duration: "recurring", startOffsetMonths: 1, requiresValidation: true, clawbackOnRefund: true },
+    { id: "l37-b", title: "Legacy from month 3", trigger: "transaction_paid", valueType: "Cash", amountMode: "fixed", rateOrAmount: 40, currency: "SGD", duration: "recurring", startOffsetMonths: 3, requiresValidation: true, clawbackOnRefund: true },
+    { id: "l37-c", title: "Legacy deal rule with duration", trigger: "deal_closed_won", valueType: "Cash", amountMode: "fixed", rateOrAmount: 250, currency: "SGD", duration: "one_off", startOffsetMonths: 4, durationMonths: 1, requiresValidation: true, clawbackOnRefund: true },
+    { id: "l37-d", title: "Legacy amount floor", trigger: "transaction_paid", conditions: [{ field: "amount", operator: ">=", value: 500 }], valueType: "Cash", amountMode: "percentage", rateOrAmount: 5, requiresValidation: true, clawbackOnRefund: true },
+    { id: "l37-e", title: "Free text rule", trigger: "On every transaction from won deals", rate: "10%" },
+  ];
+  assert.ok(rules37.length >= 10, "Equivalence covers templates, every seeded rule and older formats");
+  const events37: RewardEvent[] = [];
+  for (const trigger of ["transaction_added_customer", "transaction_added_deal", "new_transaction"] as const) {
+    for (let m = 1; m <= 30; m++) {
+      for (const amount of [300, 1000]) {
+        events37.push({
+          trigger, sourceId: `e37-${trigger}-${m}-${amount}`, sourceLabel: "x", partnerName: "P", currency: "SGD", amount,
+          record: { amount, name: "TX" }, customer: { billingFrequency: m % 2 ? "Monthly" : "Yearly", subscriptionPlan: "Pro" },
+          hasDeal: trigger !== "transaction_added_customer", monthIndex: m, transactionIndex: m, runningSum: amount * m,
+          monthlySubscriptionFee: amount, isStillPartnerClient: m !== 29,
+          ...(m === 7 ? { agreedOverrideRatePct: 8, agreedBeforeAcceptanceTimestamp: "2026-01-01", orderAcceptedTimestamp: "2026-01-02" } : {}),
+        });
+      }
+    }
+  }
+  events37.push(
+    { trigger: "deal_closed_won", sourceId: "e37-deal", sourceLabel: "d", partnerName: "P", currency: "SGD", amount: 20000, record: { amount: 20000 } },
+    { trigger: "deal_closed_won", sourceId: "e37-deal-agreed", sourceLabel: "d", partnerName: "P", currency: "SGD", amount: 20000, record: { amount: 20000 }, agreedOverrideRatePct: 6, agreedBeforeAcceptanceTimestamp: "2026-01-01", orderAcceptedTimestamp: "2026-01-02" },
+    { trigger: "lead_accepted", sourceId: "e37-lead", sourceLabel: "l", partnerName: "P", currency: "SGD", amount: 0, record: {} }
+  );
+  let compared37 = 0;
+  for (const original of rules37) {
+    const norm = normalizeRewardRule(original, "SGD");
+    const edited = toEditableRule(original, "SGD");
+    assert.equal(edited.duration, undefined, `${norm.title}: editor drops the old duration fields`);
+    const reEdited = toEditableRule(JSON.parse(JSON.stringify(edited)), "SGD");
+    assert.deepEqual(reEdited, edited, `${norm.title}: opening a saved rule again changes nothing`);
+    for (const e of events37) {
+      const outcome37 = (r: ReturnType<typeof evaluateRuleAmount>) => (r.paid ? r : { paid: false });
+      assert.deepEqual(outcome37(evaluateRuleAmount(edited, e)), outcome37(evaluateRuleAmount(norm, e)), `${norm.title}: same result for ${e.sourceId}`);
+      compared37++;
+    }
+  }
+  const premium37 = toEditableRule(DEFAULT_COMMISSION_TEMPLATES.biz_partner_premium_recurring, "SGD");
+  assert.ok(premium37.conditions?.some((c) => (c as { type?: string }).type === "month_range"), "Premium window becomes a visible month range");
+  assert.match(describeRule(premium37, "SGD"), /20% \(months 4–15\) then 10% \(months 16–27\)/);
+  assert.match(describeRule(premium37, "SGD"), /from month 4 to month 27/);
+  const oneOff37 = toEditableRule(DEFAULT_COMMISSION_TEMPLATES.biz_partner_one_off, "SGD");
+  assert.match(describeRule(oneOff37, "SGD"), /^one month's subscription fee for every .*in month 4 only\.$/);
+  const built37 = {
+    id: "b37", title: "Monthly plans, 3rd to 15th transaction", trigger: "transaction_added_customer" as const, valueType: "Cash" as const,
+    amountMode: "percentage" as const, rateOrAmount: 10, requiresValidation: true, clawbackOnRefund: true,
+    conditions: [{ type: "transaction_count" as const, from: 3, to: 15 }, { type: "customer_property" as const, field: "billingFrequency", operator: "contains" as const, value: "month" }],
+  };
+  assert.equal(
+    describeRule(built37, "SGD"),
+    `10% of amount for every transaction added on a customer, from the customer's 3rd to 15th transaction, if the customer's billing frequency contains "month".`
+  );
+  assert.deepEqual(validateRule(built37), []);
+  assert.ok(validateRule({ ...built37, title: " " }).includes("Give the reward a label."));
+  assert.ok(validateRule({ ...built37, rateOrAmount: 0 }).includes("Enter a percentage above 0."));
+  assert.ok(validateRule({ ...built37, rateOrAmount: 120 }).includes("A percentage can't be more than 100%."));
+  assert.ok(validateRule({ ...built37, conditions: [{ type: "transaction_count", from: 5, to: 2 }] }).length === 1, "Backwards range refused");
+  assert.ok(validateRule({ ...built37, conditions: [{ type: "customer_property", field: "", operator: "contains", value: "x" }] }).includes("Choose a field for each field condition."));
+  assert.ok(validateRule({ ...built37, rateSteps: [{ fromMonth: 1, toMonth: 12, ratePct: 20 }, { fromMonth: 10, toMonth: 20, ratePct: 10 }] }).includes("Rate steps overlap."));
+  assert.deepEqual(validateRule(toEditableRule(DEFAULT_COMMISSION_TEMPLATES.referral_entry, "SGD")), [], "Agreed-rate rule may have 0% (it uses the agreed rate)");
+  console.log(`✓ Fixture 37 passed (§3.6 R3): ${rules37.length} rules × ${events37.length} events (${compared37} checks) pay the same after editing; summaries and save checks correct`);
+
+  console.log("\nALL 37 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
   await prisma.$disconnect();
 }
 

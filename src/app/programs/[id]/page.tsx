@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { BackBreadcrumb, StatusBadge } from "@/components/SharedEngines";
 import { ProgramRuleModal } from "@/components/ProgramRuleModal";
+import { describeRule, toEditableRule } from "@/lib/ruleEditing";
 import {
   StructuredRewardRule,
   SUPPORTED_CURRENCIES,
@@ -69,14 +70,12 @@ export default function ProgramDetailPage() {
   const [ruleForm, setRuleForm] = useState<StructuredRewardRule>({
     id: "",
     title: "",
-    trigger: "transaction_paid",
+    trigger: "new_transaction",
+    conditions: [],
     valueType: "Cash",
     amountMode: "percentage",
-    rateOrAmount: 15,
+    rateOrAmount: 10,
     currency: baseCurrency,
-    duration: "recurring",
-    startOffsetMonths: 1,
-    durationMonths: 12,
     rateSteps: [],
     requiresValidation: true,
     clawbackOnRefund: true,
@@ -154,14 +153,12 @@ export default function ProgramDetailPage() {
     setRuleForm({
       id: `rule-${Date.now()}`,
       title: "",
-      trigger: "transaction_paid",
+      trigger: "new_transaction",
+      conditions: [],
       valueType: "Cash",
       amountMode: "percentage",
-      rateOrAmount: 15,
+      rateOrAmount: 10,
       currency: baseCurrency,
-      duration: "recurring",
-      startOffsetMonths: 1,
-      durationMonths: 12,
       rateSteps: [],
       requiresValidation: true,
       clawbackOnRefund: true,
@@ -171,7 +168,7 @@ export default function ProgramDetailPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const openEditRuleModal = (rawRule: any) => {
-    const norm = normalizeRewardRule(rawRule, baseCurrency);
+    const norm = toEditableRule(rawRule, baseCurrency);
     setEditingRuleId(norm.id);
     setRuleForm(norm);
     setRuleModalOpen(true);
@@ -210,7 +207,7 @@ export default function ProgramDetailPage() {
       {
         category: "commission_templates",
         name: tplTitle,
-        subtitle: `${rule.amountMode} · ${rule.duration}`,
+        subtitle: describeRule(rule, baseCurrency),
         status: "Active",
         metadata: {
           ...rule,
@@ -792,42 +789,23 @@ export default function ProgramDetailPage() {
                                       {r.title}
                                     </p>
                                     <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">
-                                      {r.valueType} · {r.amountMode}
+                                      {r.valueType}
                                     </span>
                                   </div>
-                                  <p className="text-slate-600">
-                                    Trigger: <strong>{r.trigger}</strong> ·
-                                    Duration: <strong>{r.duration}</strong>{" "}
-                                    (Start Month {r.startOffsetMonths ?? 1}
-                                    {r.duration === "recurring"
-                                      ? ` for ${r.durationMonths || 12} mos`
-                                      : ""}
-                                    ) ·{" "}
-                                    {r.requiresValidation
-                                      ? "Requires Validation"
-                                      : "Auto-Validated"}{" "}
-                                    ·{" "}
-                                    {r.clawbackOnRefund
-                                      ? "Clawback on Refund"
-                                      : "No Clawback"}
+                                  <p className="text-slate-700">{describeRule(r, baseCurrency)}</p>
+                                  {r.description && <p className="text-slate-500 text-[11px]">{r.description}</p>}
+                                  <p className="text-slate-500 text-[11px]">
+                                    {r.requiresValidation ? "Needs admin validation" : "Validated automatically"} ·{" "}
+                                    {r.clawbackOnRefund ? "Reversed if refunded" : "Not reversed on refund"}
                                   </p>
-                                  {r.rateSteps && r.rateSteps.length > 0 && (
-                                    <p className="text-blue-700 font-semibold text-[11px]">
-                                      Stepped Rates:{" "}
-                                      {r.rateSteps
-                                        .map(
-                                          (s) =>
-                                            `${s.ratePct}% (Months ${s.fromMonth}–${s.toMonth})`
-                                        )
-                                        .join(" → ")}
-                                    </p>
-                                  )}
                                 </div>
 
                                 <div className="flex items-center space-x-2">
                                   <span className="px-2.5 py-1 rounded bg-blue-600 text-white font-bold">
                                     {r.amountMode === "percentage"
-                                      ? `${r.rateOrAmount}%`
+                                      ? r.rateSteps && r.rateSteps.length > 0
+                                        ? r.rateSteps.map((st) => `${st.ratePct}%`).join(" → ")
+                                        : `${r.rateOrAmount}%`
                                       : r.amountMode ===
                                         "one_month_subscription"
                                       ? "1 Month Fee"

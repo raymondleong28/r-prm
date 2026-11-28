@@ -98,3 +98,23 @@ Behaviour changes and judgement calls:
 - A cancelled customer stops earning from the month it cancelled; earlier transactions still count.
 - Deal page "+ Record Transaction" was sending the deal amount in cents as if it were whole currency (100× too large); fixed.
 - Migration 0006 backfills `Transaction.customerId` by exact customer name (case-insensitive); it doesn't delete anything.
+
+---
+
+## Round R3 report (§3.6 reward rule form) — 28 Nov 2026, writer: Claude
+
+| Item | Check | Result |
+|---|---|---|
+| Editing never changes amounts | Fixture 37: 23 rules (3 templates, every seeded rule, 5 older formats incl. free text) × 183 events (3 transaction triggers × months 1–30 × two amounts, deal won, lead accepted, agreed-rate cases) — same result before and after opening in the form; opening twice changes nothing | Pass (4,209 checks) |
+| Summary sentence | Fixture 37: Premium template reads "20% (months 4–15) then 10% (months 16–27) … from month 4 to month 27"; one-off reads "… in month 4 only" | Pass |
+| Save checks | Fixture 37: no label, 0%, over 100%, backwards range, missing field, overlapping rate periods are refused; 0% allowed only with "agreed in writing" | Pass |
+| Browser | Built "10% on the customer's 3rd–15th transaction if billing frequency contains month" in the form → summary shown → saved → still there after reload → Edit loads trigger and 3/15 → changed to 12% → stored with no old duration fields → deleted | Pass, no page errors |
+| Typecheck / 37 fixtures / build | cloud PostgreSQL 16 harness | Pass |
+
+Judgement calls:
+- Older rules keep their effect: start month / duration become a month-range condition the admin can see and edit. Older field conditions the form can't edit (e.g. "amount ≥ 500") are kept exactly as saved and shown as "Older condition" with Remove.
+- Choosing "No, only when conditions are met" and saving with no conditions pays every time (the summary says so).
+- Changing the trigger to deal won or lead accepted drops conditions that only work on transactions (month, count, total, transaction/customer fields) and rate periods.
+- Manage → Commission templates: renaming a template no longer resets its timing to "recurring, 12 months".
+
+Not done (stays open): custom properties on the reward itself — needs R2b custom fields.

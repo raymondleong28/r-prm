@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { toEditableRule } from "@/lib/ruleEditing";
 import { usePrm } from "@/context/PrmContext";
 import { StatusBadge } from "@/components/SharedEngines";
 import { ManageFormState, ManageModals } from "@/components/ManageModals";
@@ -356,24 +357,24 @@ export default function ManageHubPage() {
 
     const metadata =
       selectedTool === "commission_templates"
-        ? {
-            id: existingMeta.id || `tpl-${Date.now()}`,
-            title: form.name,
-            trigger: existingMeta.trigger || "transaction_paid",
-            valueType: existingMeta.valueType || "Cash",
-            amountMode: existingMeta.amountMode || "percentage",
-            rateOrAmount: Number(existingMeta.rateOrAmount ?? 10),
-            currency: existingMeta.currency || baseCurrency,
-            duration: existingMeta.duration || "recurring",
-            startOffsetMonths: Number(existingMeta.startOffsetMonths ?? 1),
-            durationMonths: Number(existingMeta.durationMonths ?? 12),
-            rateSteps: existingMeta.rateSteps || [],
-            conditions: existingMeta.conditions || [],
-            requiresValidation: Boolean(
-              existingMeta.requiresValidation ?? true
-            ),
-            clawbackOnRefund: Boolean(existingMeta.clawbackOnRefund ?? true),
-          }
+        ? // Keep every rule setting; only the name changes here. Older duration fields
+          // become the equivalent month range so the template pays the same.
+          toEditableRule(
+            {
+              trigger: "new_transaction",
+              valueType: "Cash",
+              amountMode: "percentage",
+              rateOrAmount: 10,
+              conditions: [],
+              rateSteps: [],
+              requiresValidation: true,
+              clawbackOnRefund: true,
+              ...existingMeta,
+              id: existingMeta.id || `tpl-${Date.now()}`,
+              title: form.name,
+            },
+            baseCurrency
+          )
         : {
             fileName: form.fileName,
             fileUrl: normalizeFileUrl(form.fileUrl),
