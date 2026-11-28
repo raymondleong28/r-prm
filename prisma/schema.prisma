@@ -166,6 +166,7 @@ model Customer {
   transactionsCount Int      @default(0)
   revenuesBase      Int      @default(0)
   createdAt         DateTime @default(now())
+  transactions      Transaction[]
 }
 
 model Transaction {
@@ -176,6 +177,8 @@ model Transaction {
   amountBase   Int
   partnerName  String
   customerName String
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
   dealName     String
   monthKey     String   @default("")
   createdAt    DateTime @default(now())
@@ -194,6 +197,7 @@ model Reward {
   fromRewardRule String   @default("")
   status         String   @default("Pending") // Pending, Accepted, Paid, Refused
   payoutNumber   String   @default("")
+  sourceKey      String?  @unique // "<ruleId>::<sourceId>" — stops the same rule paying twice for the same transaction/deal/lead
   payoutId       String?
   payout         Payout?  @relation(fields: [payoutId], references: [id])
   comment        String   @default("")

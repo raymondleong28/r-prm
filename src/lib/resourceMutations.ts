@@ -4,7 +4,6 @@ import {
   convertWithDatedFx,
   currentIsoDateInTimezone,
   currentMonthKeyInTimezone,
-  generateRewardsFromPartnerLevel,
   generateRandomLeadFormToken,
   resolveExplicitProgramAndPipeline,
   toMinorUnits,
@@ -25,6 +24,26 @@ import {
   matchAccountListsByDomainAndName,
 } from "./importAndEmailHelpers";
 import { executeWorkspaceAdminMutation } from "./workspaceAdminMutations";
+import crypto from "node:crypto";
+import {
+  generateRewardsForDealWon,
+  generateRewardsForLeadAccepted,
+  generateRewardsForTransaction,
+} from "./rewardGeneration";
+
+async function auditGeneratedRewards(session: RprmSession, rewardIds: string[], source: string) {
+  if (rewardIds.length === 0) return;
+  const rows = await prisma.reward.findMany({ where: { id: { in: rewardIds } } });
+  for (const r of rows) {
+    await writeAudit({
+      session,
+      action: "CREATE",
+      objectType: "Reward",
+      objectId: r.id,
+      summary: `Generated reward ${r.rewardNumber} (${r.currency} ${toMajorUnits(r.amount)}, ${r.fromRewardRule}) for ${r.partnerName} from ${source}`,
+    });
+  }
+}
 
 export {
   writeAudit,
@@ -628,6 +647,10 @@ export async function executeResourceMutation(
         objectId: lead.id,
         summary: `Lead "${lead.firstName} ${lead.lastName}" marked ${payload.status}`,
       });
+      if (payload.status === "Accepted") {
+        const leadRewards = await generateRewardsForLeadAccepted(lead.id, ws.mainCurrency);
+        await auditGeneratedRewards(session, leadRewards.rewardIds, `lead "${lead.firstName} ${lead.lastName}" accepted`);
+      }
       return NextResponse.json({ ok: true, lead });
     }
 
@@ -810,57 +833,8 @@ export async function executeResourceMutation(
       });
 
       if (payload.stage === "Closed Won") {
-        const existingReward = await prisma.reward.findFirst({
-          where: {
-            fromActivity: deal.name,
-            partnerName: deal.partnerName,
-          },
-        });
-        if (!existingReward) {
-          const [partner, programs] = await Promise.all([
-            prisma.partner.findFirst({ where: { name: deal.partnerName } }),
-            prisma.program.findMany(),
-          ]);
-          if (partner) {
-            const generated = generateRewardsFromPartnerLevel(
-              {
-                id: deal.id,
-                name: deal.name,
-                amount: toMajorUnits(deal.amount),
-                currency: deal.currency,
-                partnerName: deal.partnerName,
-              },
-              partner,
-              programs,
-              undefined,
-              ws.mainCurrency
-            );
-            for (const g of generated) {
-              const newReward = await prisma.reward.create({
-                data: {
-                  rewardNumber: `RW-${Math.floor(1050 + Math.random() * 8900)}`,
-                  partnerName: g.partnerName,
-                  recipientName: g.recipientName,
-                  type: g.type,
-                  amount: g.amountMinor,
-                  currency: g.currency,
-                  amountBase: g.amountBaseMinor,
-                  fromActivity: g.fromActivity,
-                  fromRewardRule: g.fromRewardRule,
-                  status: g.status,
-                  comment: g.comment,
-                },
-              });
-              await writeAudit({
-                session,
-                action: "CREATE",
-                objectType: "Reward",
-                objectId: newReward.id,
-                summary: `Generated tier reward ${newReward.rewardNumber} (${ws.mainCurrency} ${g.amountBase}, ${g.fromRewardRule}) for ${g.partnerName}`,
-              });
-            }
-          }
-        }
+        const result = await generateRewardsForDealWon(deal.id, ws.mainCurrency);
+        await auditGeneratedRewards(session, result.rewardIds, `deal "${deal.name}" won`);
       }
       return NextResponse.json({ ok: true, deal });
     }
@@ -985,58 +959,38 @@ export async function executeResourceMutation(
         payload.currency || ws.mainCurrency,
         ws.mainCurrency
       );
+      // Link to the customer record (by id, or by exact name) so "Nth transaction of a customer" rules work
+      const customerIdInput = String(payload.customerId || "").trim();
+      const customerNameInput = String(payload.customerName || "").trim();
+      const linkedCustomer = customerIdInput
+        ? await prisma.customer.findUnique({ where: { id: customerIdInput } })
+        : customerNameInput
+        ? await prisma.customer.findFirst({
+            where: { name: { equals: customerNameInput, mode: "insensitive" } },
+          })
+        : null;
+      if (customerIdInput && !linkedCustomer) {
+        return NextResponse.json({ error: "Customer not found." }, { status: 400 });
+      }
       const tx = await prisma.transaction.create({
         data: {
           name:
             payload.name ||
-            `INV-${todayIso.slice(0, 4)}-${Math.floor(910 + Math.random() * 90)}`,
+            `TX-${todayIso.replace(/-/g, "")}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
           amount: fx.originalAmountMinor,
           currency: fx.currency,
           amountBase: fx.amountBaseMinor,
           partnerName,
-          customerName: String(payload.customerName || "").trim(),
+          customerName: linkedCustomer?.name || String(payload.customerName || "").trim(),
+          customerId: linkedCustomer?.id || null,
           dealName: String(payload.dealName || "").trim(),
           monthKey:
             payload.monthKey || currentMonthKeyInTimezone(ws.timezone),
         },
       });
 
-      const [partner, programs] = await Promise.all([
-        prisma.partner.findFirst({ where: { name: partnerName } }),
-        prisma.program.findMany(),
-      ]);
-      if (partner) {
-        const generated = generateRewardsFromPartnerLevel(
-          {
-            id: tx.id,
-            name: tx.name,
-            amount,
-            currency: tx.currency,
-            partnerName: tx.partnerName,
-          },
-          partner,
-          programs,
-          undefined,
-          ws.mainCurrency
-        );
-        for (const g of generated) {
-          await prisma.reward.create({
-            data: {
-              rewardNumber: `RW-${Math.floor(1050 + Math.random() * 8900)}`,
-              partnerName: g.partnerName,
-              recipientName: g.recipientName,
-              type: g.type,
-              amount: g.amountMinor,
-              currency: g.currency,
-              amountBase: g.amountBaseMinor,
-              fromActivity: g.fromActivity,
-              fromRewardRule: g.fromRewardRule,
-              status: g.status,
-              comment: g.comment,
-            },
-          });
-        }
-      }
+      const rewardResult = await generateRewardsForTransaction(tx.id, ws.mainCurrency);
+      await auditGeneratedRewards(session, rewardResult.rewardIds, `transaction "${tx.name}"`);
 
       await writeAudit({
         session,

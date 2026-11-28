@@ -76,3 +76,25 @@ Judgement calls:
 - A token acts as the administrator who created it and stops working if that person is disabled or no longer an administrator.
 
 New dependency: `pdf-lib` (generates the self-billed invoice PDF).
+
+---
+
+## Round R2a report (§3.6 reward engine) — 28 Nov 2026, writer: Claude
+
+| Item | Check | Result |
+|---|---|---|
+| Live engine follows rule settings | Fixture 36: 28 monthly transactions through `CREATE_TRANSACTION` on a Premium-style rule → paid months 4–27 only; 20% in months 4 and 15, 10% in months 16 and 27 | Pass |
+| Conditions | Fixture 36: 3rd–5th transaction rule pays 3, 4, 5; monthly-plan customer rule pays monthly customer, not yearly; running-total rule pays at the 10th transaction | Pass |
+| Triggers | Fixture 36: deal won pays the deal rule once (closing twice doesn't duplicate) and transaction rules don't fire on the deal; lead accepted pays its gift card | Pass |
+| No double-paying, numbering | Fixture 36: re-running the engine creates 0 rewards; reward numbers unique `RW-<n>` | Pass |
+| Existing amounts unchanged | Fixtures 3a–3d, 7 (Apex SGD 7,125 + 1,425), 13, 30 | Pass |
+| Browser | Recorded SGD 10,000 for Apex's customer in the Transactions form → linked to the customer; rewards RW-1042 SGD 2,500 and RW-1043 SGD 500 created | Pass |
+| Typecheck / 36 fixtures / build | cloud PostgreSQL 16 harness | Pass |
+
+Behaviour changes and judgement calls:
+- Closing a deal no longer pays the "% of every transaction" rules on the deal amount (they pay on transactions). Only rules whose trigger is "deal closed won" pay on a won deal. Before, a won deal and its transactions could both pay.
+- Demo data: the Platinum "5% Annual Milestone Kickback" rule paid 5% on every transaction, which didn't match its title. It's renamed "5% Platinum Bonus on Every Transaction" in the demo seed (amounts unchanged). Existing databases keep the old title until re-seeded.
+- A transaction with no customer counts as month 1 and the 1st transaction.
+- A cancelled customer stops earning from the month it cancelled; earlier transactions still count.
+- Deal page "+ Record Transaction" was sending the deal amount in cents as if it were whole currency (100× too large); fixed.
+- Migration 0006 backfills `Transaction.customerId` by exact customer name (case-insensitive); it doesn't delete anything.

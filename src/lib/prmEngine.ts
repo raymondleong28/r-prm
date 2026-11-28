@@ -187,10 +187,17 @@ export interface StructuredRewardRule {
   title: string;
   trigger:
     | "transaction_paid"
+    | "transaction_added_customer"
+    | "transaction_added_deal"
+    | "new_transaction"
     | "deal_closed_won"
     | "lead_accepted"
     | "lead_converted";
-  conditions?: StructuredCondition[];
+  /** Legacy {field, operator} conditions and new {type, ...} conditions (see rewardRules.ts). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  conditions?: Array<StructuredCondition | Record<string, any>>;
+  /** For percentage rules: which numeric field of the transaction/deal the % applies to (default "amount"). */
+  percentOfField?: string;
   valueType: "Cash" | "Coupon" | "Gift card" | "Credit";
   amountMode: "percentage" | "fixed" | "one_month_subscription";
   rateOrAmount: number;
@@ -326,110 +333,6 @@ export const DEFAULT_COMMISSION_TEMPLATES: Record<
     clawbackOnRefund: true,
   },
 };
-
-export function evaluateRuleForInvoice(
-  rule: StructuredRewardRule,
-  event: MerchantInvoiceEvent,
-  existingIdempotencyKeys: Set<string> = new Set(),
-  fxTable: DatedFxTable = DEFAULT_FX_TABLE,
-  baseCurrency?: string
-): GeneratedRewardResult | null {
-  const idempotencyKey = `${event.invoiceId}::${rule.id}::M${event.billingMonth}`;
-  if (existingIdempotencyKeys.has(idempotencyKey)) {
-    return null; // Idempotent: never double-pay
-  }
-
-  if (event.isStillPartnerClient === false) {
-    return null;
-  }
-
-  const startMonth = rule.startOffsetMonths ?? 1;
-  if (event.billingMonth < startMonth) {
-    return null;
-  }
-
-  if (rule.duration === "one_off" && event.billingMonth !== startMonth) {
-    return null;
-  }
-
-  if (rule.duration === "recurring" && rule.durationMonths) {
-    const endMonth = startMonth + rule.durationMonths - 1;
-    if (event.billingMonth > endMonth) {
-      return null;
-    }
-  }
-
-  if (rule.conditions && rule.conditions.length > 0) {
-    for (const cond of rule.conditions) {
-      if (cond.field === "agreedBeforeAcceptance") {
-        const hasRate =
-          typeof event.agreedOverrideRatePct === "number" &&
-          event.agreedOverrideRatePct > 0;
-        const hasTimestamps =
-          Boolean(event.agreedBeforeAcceptanceTimestamp) &&
-          Boolean(event.orderAcceptedTimestamp) &&
-          String(event.agreedBeforeAcceptanceTimestamp) <=
-            String(event.orderAcceptedTimestamp);
-        if (!hasRate || !hasTimestamps) {
-          return null;
-        }
-      }
-      if (cond.field === "amount" && cond.operator === ">=") {
-        if (event.invoiceAmount < Number(cond.value)) return null;
-      }
-    }
-  }
-
-  let rewardAmount = 0;
-  if (rule.amountMode === "one_month_subscription") {
-    rewardAmount = event.monthlySubscriptionFee ?? event.invoiceAmount;
-  } else if (rule.amountMode === "fixed") {
-    rewardAmount = rule.rateOrAmount;
-  } else if (rule.amountMode === "percentage") {
-    let pct = rule.rateOrAmount;
-    if (rule.rateSteps && rule.rateSteps.length > 0) {
-      const step = rule.rateSteps.find(
-        (s) =>
-          event.billingMonth >= s.fromMonth && event.billingMonth <= s.toMonth
-      );
-      if (!step) return null;
-      pct = step.ratePct;
-    } else if (
-      typeof event.agreedOverrideRatePct === "number" &&
-      rule.rateOrAmount === 0
-    ) {
-      pct = event.agreedOverrideRatePct;
-    }
-    rewardAmount = Math.round(event.invoiceAmount * (pct / 100) * 100) / 100;
-  }
-
-  if (rewardAmount <= 0) return null;
-
-  const fx = convertWithDatedFx(
-    rewardAmount,
-    event.currency,
-    baseCurrency,
-    fxTable
-  );
-
-  return {
-    idempotencyKey,
-    ruleId: rule.id,
-    ruleTitle: rule.title,
-    partnerName: event.partnerName,
-    fromActivity: `${event.invoiceId} · ${event.merchantName} (Month ${event.billingMonth})`,
-    valueType: rule.valueType,
-    amount: rewardAmount,
-    amountMinor: fx.originalAmountMinor,
-    currency: fx.currency,
-    amountBase: fx.amountBase,
-    amountBaseMinor: fx.amountBaseMinor,
-    fxRate: fx.fxRate,
-    fxRateDate: fx.fxRateDate,
-    status: rule.requiresValidation ? "Pending" : "Validated",
-    billingMonth: event.billingMonth,
-  };
-}
 
 // Compute Partner KPIs dynamically from leads, deals, rewards
 export function computePartnerKpis(
@@ -620,100 +523,6 @@ export function getPartnerLevelRules(
   return matchedLevel.rewards.map((r: unknown) =>
     normalizeRewardRule(r, partner?.currency)
   );
-}
-
-// Generate rewards for a Transaction or Closed Won Deal using the Partner's actual tier level rules
-export function generateRewardsFromPartnerLevel(
-  txOrDeal: {
-    id: string;
-    name: string;
-    amount: number;
-    currency: string;
-    partnerName: string;
-    isFirstClosedWonDeal?: boolean;
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  partner: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  programs: any[],
-  fxTable: DatedFxTable = DEFAULT_FX_TABLE,
-  baseCurrency?: string
-) {
-  const rules = getPartnerLevelRules(partner, programs);
-  const generated: {
-    ruleId: string;
-    ruleTitle: string;
-    partnerName: string;
-    recipientName: string;
-    type: string;
-    amount: number;
-    amountMinor: number;
-    currency: string;
-    amountBase: number;
-    amountBaseMinor: number;
-    fromActivity: string;
-    fromRewardRule: string;
-    status: string;
-    comment: string;
-  }[] = [];
-
-  for (const rule of rules) {
-    if (rule.amountMode === "percentage" && rule.rateOrAmount > 0) {
-      const rawAmt =
-        Math.round(txOrDeal.amount * (rule.rateOrAmount / 100) * 100) / 100;
-      const fx = convertWithDatedFx(
-        rawAmt,
-        txOrDeal.currency,
-        baseCurrency,
-        fxTable
-      );
-      generated.push({
-        ruleId: rule.id,
-        ruleTitle: rule.title,
-        partnerName: partner.name,
-        recipientName: partner.name,
-        type: rule.valueType || "Cash",
-        amount: fx.originalAmount,
-        amountMinor: fx.originalAmountMinor,
-        currency: fx.currency,
-        amountBase: fx.amountBase,
-        amountBaseMinor: fx.amountBaseMinor,
-        fromActivity: txOrDeal.name,
-        fromRewardRule: rule.title,
-        status: rule.requiresValidation ? "Pending" : "Accepted",
-        comment: `Computed from ${partner.qualifyingLevel} rule (${rule.rateOrAmount}%) @ FX ${fx.fxRate} (${fx.fxRateDate})`,
-      });
-    } else if (
-      rule.amountMode === "fixed" &&
-      rule.rateOrAmount > 0 &&
-      txOrDeal.isFirstClosedWonDeal
-    ) {
-      const fx = convertWithDatedFx(
-        rule.rateOrAmount,
-        rule.currency || txOrDeal.currency,
-        baseCurrency,
-        fxTable
-      );
-      generated.push({
-        ruleId: rule.id,
-        ruleTitle: rule.title,
-        partnerName: partner.name,
-        recipientName: partner.name,
-        type: rule.valueType || "Cash",
-        amount: fx.originalAmount,
-        amountMinor: fx.originalAmountMinor,
-        currency: fx.currency,
-        amountBase: fx.amountBase,
-        amountBaseMinor: fx.amountBaseMinor,
-        fromActivity: txOrDeal.name,
-        fromRewardRule: rule.title,
-        status: rule.requiresValidation ? "Pending" : "Accepted",
-        comment: `Computed from ${partner.qualifyingLevel} fixed bonus rule @ FX ${fx.fxRate} (${fx.fxRateDate})`,
-      });
-    }
-  }
-
-  return generated;
 }
 
 // Server-side Asset & Content Scoping

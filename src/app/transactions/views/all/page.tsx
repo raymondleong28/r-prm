@@ -29,7 +29,7 @@ export default function TransactionsListPage() {
     name: "",
     currency: "",
     amount: "",
-    customerName: "",
+    customerId: "",
     dealName: "",
     partnerName: "",
   });
@@ -39,7 +39,7 @@ export default function TransactionsListPage() {
       name: "",
       currency: baseCurrency,
       amount: "",
-      customerName: customers[0]?.name || "",
+      customerId: "",
       dealName: deals[0]?.name || "",
       partnerName: partners[0]?.name || "",
     });
@@ -217,15 +217,15 @@ export default function TransactionsListPage() {
                   Customer
                 </label>
                 <select
-                  value={form.customerName}
+                  value={form.customerId}
                   onChange={(e) =>
-                    setForm({ ...form, customerName: e.target.value })
+                    setForm({ ...form, customerId: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 >
                   <option value="">None</option>
                   {customers.map((c) => (
-                    <option key={c.id} value={c.name}>
+                    <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}

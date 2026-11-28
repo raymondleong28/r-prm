@@ -13,7 +13,6 @@ import {
 } from "../src/lib/partnerSerializer";
 import {
   DEFAULT_COMMISSION_TEMPLATES,
-  evaluateRuleForInvoice,
   convertWithDatedFx,
   computePartnerKpis,
   computeLast12Months,
@@ -77,6 +76,8 @@ import {
   verifyTotpCode,
 } from "../src/lib/mfa";
 import { readProspectionSettings } from "../src/lib/prospectionSettings";
+import { evaluateRuleForInvoice, sortableMonthKey, monthsBetween } from "../src/lib/rewardRules";
+import { generateRewardsForTransaction } from "../src/lib/rewardGeneration";
 import { escapeCsvCell, rowsToCsv } from "../src/lib/csvExport";
 import {
   applyListState,
@@ -2091,7 +2092,155 @@ async function runFixtures() {
     "✓ Fixture 35 passed (§3.6): real list date/filters/paging/saved views, API tokens (hashed, bearer auth, revoke), self-billed invoice PDF, password change, program rename"
   );
 
-  console.log("\nALL 35 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
+  // Fixture 36 (§3.6 R2a): the live reward engine follows each rule — month windows and rate steps,
+  // transaction count, running total, customer fields, deal-won and lead-accepted triggers, no double-paying
+  assert.equal(sortableMonthKey("06/2026"), "2026-06");
+  assert.equal(monthsBetween("11/2025", "02/2026"), 3, "Month maths crosses the year boundary");
+  const stamp36 = Date.now();
+  const premiumTpl = DEFAULT_COMMISSION_TEMPLATES.biz_partner_premium_recurring;
+  const engineRules = [
+    { ...premiumTpl, id: `r36-premium-${stamp36}`, title: "Premium steps" },
+    {
+      id: `r36-count-${stamp36}`, title: "3rd to 5th transaction 10%", trigger: "transaction_added_customer",
+      conditions: [{ type: "transaction_count", from: 3, to: 5 }],
+      valueType: "Cash", amountMode: "percentage", rateOrAmount: 10, requiresValidation: true, clawbackOnRefund: true,
+    },
+    {
+      id: `r36-monthly-${stamp36}`, title: "Monthly plans 1%", trigger: "transaction_added_customer",
+      conditions: [{ type: "customer_property", field: "billingFrequency", operator: "contains", value: "month" }],
+      valueType: "Cash", amountMode: "percentage", rateOrAmount: 1, requiresValidation: true, clawbackOnRefund: true,
+    },
+    {
+      id: `r36-sum-${stamp36}`, title: "Bonus once customer total reaches 10,000", trigger: "transaction_added_customer",
+      conditions: [{ type: "transaction_sum", operator: "gte", value: 10000 }, { type: "transaction_count", from: 10, to: 10 }],
+      valueType: "Cash", amountMode: "fixed", rateOrAmount: 300, currency: "SGD", requiresValidation: true, clawbackOnRefund: true,
+    },
+    {
+      id: `r36-won-${stamp36}`, title: "Deal won bonus", trigger: "deal_closed_won",
+      valueType: "Cash", amountMode: "fixed", rateOrAmount: 500, currency: "SGD", requiresValidation: true, clawbackOnRefund: true,
+    },
+    {
+      id: `r36-lead-${stamp36}`, title: "Accepted lead bonus", trigger: "lead_accepted",
+      valueType: "Gift card", amountMode: "fixed", rateOrAmount: 50, currency: "SGD", requiresValidation: false, clawbackOnRefund: false,
+    },
+  ];
+  const engineProg = await prisma.program.create({
+    data: {
+      name: `Engine Fixture Program ${stamp36}`,
+      onboardingPipelineId: "Default Onboarding",
+      levelsJson: JSON.stringify([{ name: "Engine Level", rewards: engineRules, benefits: [], requirements: [] }]),
+      autoEmailsJson: "{}",
+      permissionsJson: "{}",
+    },
+  });
+  const enginePartnerName = `Engine Fixture Partner ${stamp36}`;
+  const engPartnerRes = await executeResourceMutation(mockAdminSession, "CREATE_PARTNER", {
+    name: enginePartnerName, programId: engineProg.id, qualifyingLevel: "Engine Level",
+  });
+  assert.equal(engPartnerRes.status, 200, "Engine fixture partner created");
+  const monthlyCust = await prisma.customer.create({
+    data: { name: `Monthly Merchant ${stamp36}`, email: `m.${stamp36}@example.com`, sourcePartnerName: enginePartnerName, billingFrequency: "Monthly", billingPeriod: "1" },
+  });
+  const yearlyCust = await prisma.customer.create({
+    data: { name: `Yearly Merchant ${stamp36}`, email: `y.${stamp36}@example.com`, sourcePartnerName: enginePartnerName, billingFrequency: "Yearly", billingPeriod: "12" },
+  });
+  const monthKeyFor = (i: number) => {
+    const d = new Date(Date.UTC(2024, 10 + i, 1)); // month 1 = 11/2024
+    return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  };
+  const byRule: Record<string, number[]> = {};
+  for (let m = 1; m <= 28; m++) {
+    const res = await executeResourceMutation(mockAdminSession, "CREATE_TRANSACTION", {
+      name: `ENG-${stamp36}-M${m}`, amount: 1000, currency: "SGD", partnerName: enginePartnerName,
+      customerName: monthlyCust.name.toUpperCase(), monthKey: monthKeyFor(m),
+    });
+    assert.equal(res.status, 200, `Transaction month ${m} recorded`);
+    const txJson = await res.json();
+    assert.equal(txJson.transaction.customerId, monthlyCust.id, "Transaction linked to the customer (name match ignores case)");
+  }
+  const engineRewards = await prisma.reward.findMany({ where: { partnerName: enginePartnerName } });
+  for (const r of engineRewards) {
+    const month = Number(/-M(\d+)$/.exec(r.fromActivity)?.[1] || 0);
+    (byRule[r.fromRewardRule] ||= []).push(month * 1000000 + toMajorUnits(r.amount));
+  }
+  const months = (rule: string) => (byRule[rule] || []).map((v) => Math.floor(v / 1000000)).sort((a, b) => a - b);
+  const amountsFor = (rule: string, month: number) =>
+    (byRule[rule] || []).filter((v) => Math.floor(v / 1000000) === month).map((v) => v % 1000000);
+  assert.deepEqual(months("Premium steps"), Array.from({ length: 24 }, (_, i) => i + 4), "Premium pays months 4–27 only (live)");
+  assert.deepEqual(amountsFor("Premium steps", 4), [200], "20% in month 4");
+  assert.deepEqual(amountsFor("Premium steps", 15), [200], "20% in month 15");
+  assert.deepEqual(amountsFor("Premium steps", 16), [100], "10% from month 16");
+  assert.deepEqual(amountsFor("Premium steps", 27), [100], "10% in month 27");
+  assert.deepEqual(months("3rd to 5th transaction 10%"), [3, 4, 5], "Transaction-count rule pays the 3rd–5th transaction");
+  assert.equal(months("Monthly plans 1%").length, 28, "Customer-field rule pays every monthly-plan transaction");
+  assert.deepEqual(months("Bonus once customer total reaches 10,000"), [10], "Running-total rule pays when the condition is met");
+  assert.equal(months("Deal won bonus").length, 0, "Deal-won rule doesn't fire on transactions");
+  const numbers = engineRewards.map((r) => r.rewardNumber);
+  assert.equal(new Set(numbers).size, numbers.length, "Reward numbers are unique");
+  assert.ok(numbers.every((n) => /^RW-\d+$/.test(n)), "Reward numbers are RW-<n>");
+
+  // Re-running the engine for an existing transaction pays nothing twice
+  const m4Tx = await prisma.transaction.findFirst({ where: { name: `ENG-${stamp36}-M4` } });
+  const rerun = await generateRewardsForTransaction(m4Tx!.id, "SGD");
+  assert.equal(rerun.created, 0, "No duplicate rewards on re-run");
+  assert.ok(rerun.skipped >= 2, "Existing rewards recognised");
+
+  // Yearly customer: the monthly-plan rule doesn't apply
+  const yRes = await executeResourceMutation(mockAdminSession, "CREATE_TRANSACTION", {
+    name: `ENG-${stamp36}-Y1`, amount: 1000, currency: "SGD", partnerName: enginePartnerName, customerId: yearlyCust.id, monthKey: "01/2025",
+  });
+  assert.equal(yRes.status, 200);
+  const yRewards = await prisma.reward.findMany({ where: { fromActivity: `ENG-${stamp36}-Y1` } });
+  assert.ok(!yRewards.some((r) => r.fromRewardRule === "Monthly plans 1%"), "Customer-field condition excludes yearly plans");
+
+  // Cancelled customer: transactions after the cancellation month earn nothing; earlier ones still count
+  await prisma.customer.update({ where: { id: yearlyCust.id }, data: { status: "Canceled", canceledDate: "2025-06-01" } });
+  const afterCancel = await executeResourceMutation(mockAdminSession, "CREATE_TRANSACTION", {
+    name: `ENG-${stamp36}-Y2`, amount: 1000, currency: "SGD", partnerName: enginePartnerName, customerId: yearlyCust.id, monthKey: "07/2025",
+  });
+  assert.equal(afterCancel.status, 200);
+  assert.equal(await prisma.reward.count({ where: { fromActivity: `ENG-${stamp36}-Y2` } }), 0, "No reward after the customer cancelled");
+  const badCustomer = await executeResourceMutation(mockAdminSession, "CREATE_TRANSACTION", {
+    name: `ENG-${stamp36}-BAD`, amount: 10, currency: "SGD", partnerName: enginePartnerName, customerId: "no-such-customer",
+  });
+  assert.equal(badCustomer.status, 400, "Unknown customer id refused");
+
+  // Deal won: deal-won rule pays once; transaction rules don't pay on the deal
+  const engDeal = await prisma.deal.create({
+    data: {
+      name: `ENG Deal ${stamp36}`, clientName: "Client", company: "Client Co", amount: toMinorUnits(20000), currency: "SGD",
+      amountBase: toMinorUnits(20000), partnerName: enginePartnerName, sourcePartnerName: enginePartnerName, stage: "Negotiation",
+    },
+  });
+  for (let i = 0; i < 2; i++) {
+    const won = await executeResourceMutation(mockAdminSession, "UPDATE_DEAL_STAGE", { id: engDeal.id, stage: "Closed Won" });
+    assert.equal(won.status, 200);
+  }
+  const dealRewards = await prisma.reward.findMany({ where: { fromActivity: engDeal.name } });
+  assert.deepEqual(dealRewards.map((r) => [r.fromRewardRule, toMajorUnits(r.amount)]), [["Deal won bonus", 500]], "Deal won pays the deal rule once");
+
+  // Lead accepted
+  const engLead = await prisma.lead.create({
+    data: { firstName: "Lia", lastName: "Tan", company: "Lead Co", email: `lead.${stamp36}@example.com`, status: "Pending", sourcePartnerName: enginePartnerName },
+  });
+  const accepted = await executeResourceMutation(mockAdminSession, "UPDATE_LEAD_STATUS", { id: engLead.id, status: "Accepted" });
+  assert.equal(accepted.status, 200);
+  const leadRewards = await prisma.reward.findMany({ where: { sourceKey: { endsWith: `::${engLead.id}` } } });
+  assert.deepEqual(leadRewards.map((r) => [r.type, toMajorUnits(r.amount), r.status]), [["Gift card", 50, "Accepted"]], "Lead-accepted rule pays its gift card");
+
+  // Clean up
+  await prisma.reward.deleteMany({ where: { partnerName: enginePartnerName } });
+  await prisma.transaction.deleteMany({ where: { partnerName: enginePartnerName } });
+  await prisma.deal.delete({ where: { id: engDeal.id } });
+  await prisma.lead.delete({ where: { id: engLead.id } });
+  await prisma.customer.deleteMany({ where: { id: { in: [monthlyCust.id, yearlyCust.id] } } });
+  await prisma.partner.deleteMany({ where: { name: enginePartnerName } });
+  await prisma.program.delete({ where: { id: engineProg.id } });
+  console.log(
+    "✓ Fixture 36 passed (§3.6 R2a): live engine applies month windows and 20%→10% steps, transaction count, running total, customer fields, deal-won and lead-accepted triggers; unique reward numbers; no double-paying"
+  );
+
+  console.log("\nALL 36 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
   await prisma.$disconnect();
 }
 

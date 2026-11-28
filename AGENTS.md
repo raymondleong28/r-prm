@@ -177,8 +177,16 @@ The reference product's reward form, observed field by field:
 - Custom properties on the reward itself.
 - Real pattern to reproduce exactly (a recurring program, monthly plan): "A% of amount on the 3rd–15th transaction added on a customer if billing frequency contains month and billing period = 1"; separate rules for quarterly (1st–4th), half-yearly (1st–2nd), yearly (1st–1st), then B% rules for the following periods. Use invented rates in the repository; Ray supplies the real ones for his own check.
 
+**Done in R2a (Fixture 36) — keep green:**
+- One engine (`src/lib/rewardRules.ts`) for live data and tests. Live transactions, deal won and lead accepted all go through it (`src/lib/rewardGeneration.ts`); the old "X% of every transaction" path is gone.
+- Month windows, one-off months, 20%→10% rate steps and "agreed in writing" now apply to live transactions. Month = months since the customer's first transaction.
+- Conditions: month range, Nth transaction of the customer, running total, transaction field, customer field (built-in fields; custom fields come with R2b). Triggers: transaction (any / on a customer / on a deal), deal closed won, lead accepted.
+- Transactions link to their customer record (`Transaction.customerId`); unique reward numbers from a sequence; `Reward.sourceKey` stops a rule paying twice for the same event.
+- A customer counts as the partner's client unless it had already cancelled when the transaction happened.
+
 Rounds (each: tests first, one commit, all fixtures green, Ray checks before the next):
-- **R2 — engine:** rule model with the 9 triggers, conditions (property / count range / sum / month range, AND-combined), "% of field" amounts; migrate existing rules without changing any amount (fixtures 3a–3d and Apex/Synthetix amounts unchanged).
+- **R2b — custom fields:** custom property values stored on records, shown on forms and detail pages, usable in filters, export, rule conditions and "% of field".
+- **R2c — remaining triggers:** deal stage changed (with editable deal stages), deal contract started, new customer, customer field changed, website visit (with referral link tracking — needs a public address, so it can wait for go-live).
 - **R3 — rule form:** builder UI matching the fields above; edit existing rules; custom reward properties.
 - **R4 — proof:** rebuild the recurring-program rules above with synthetic data, feed 24 months of monthly / quarterly / half-yearly / yearly invoices, assert every reward amount and date. Ray confirms expected numbers first (§1.5).
 

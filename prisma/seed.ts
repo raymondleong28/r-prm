@@ -1,13 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import {
   normalizeRewardRule,
-  generateRewardsFromPartnerLevel,
   generateRandomLeadFormToken,
   DEFAULT_COMMISSION_TEMPLATES,
   toMinorUnits,
 } from "../src/lib/prmEngine";
 import { encryptBankDetails } from "../src/lib/connectors";
 import { hashPasswordWithRandomSalt } from "../src/lib/authSession";
+import { rewardsForEvent } from "../src/lib/rewardRules";
+import { buildTransactionEvent } from "../src/lib/rewardGeneration";
 
 const prisma = new PrismaClient();
 
@@ -156,8 +157,8 @@ export async function seedDatabase(options?: { forceReset?: boolean }) {
           }),
           normalizeRewardRule({
             id: "r5",
-            title: "5% Annual Milestone Kickback",
-            trigger: "When annual sourced revenue exceeds SGD 150,000",
+            title: "5% Platinum Bonus on Every Transaction",
+            trigger: "On every transaction",
             rate: "5%",
           }),
         ],
@@ -1036,23 +1037,18 @@ export async function seedDatabase(options?: { forceReset?: boolean }) {
     prisma.transaction.findMany({ orderBy: { id: "asc" } }),
   ]);
 
+  // Link seeded transactions to their customer records (same rule the app uses)
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Transaction" t SET "customerId" = c."id" FROM "Customer" c WHERE t."customerId" IS NULL AND lower(trim(t."customerName")) = lower(trim(c."name")) AND trim(t."customerName") <> ''`
+  );
+
   let seq = 1041;
   for (const tx of seededTransactions) {
     const partner = seededPartners.find((p) => p.name === tx.partnerName);
     if (!partner) continue;
-    const generated = generateRewardsFromPartnerLevel(
-      {
-        id: tx.id,
-        name: tx.name,
-        amount: tx.amount / 100,
-        currency: tx.currency,
-        partnerName: tx.partnerName,
-      },
-      partner,
-      seededPrograms,
-      undefined,
-      "SGD"
-    );
+    const event = await buildTransactionEvent(tx.id);
+    if (!event) continue;
+    const generated = rewardsForEvent(partner, seededPrograms, event, undefined, "SGD");
     for (const g of generated) {
       const rewardNumber = `RW-${seq--}`;
       const isPaidTx = tx.id === "tx-6";
@@ -1061,13 +1057,14 @@ export async function seedDatabase(options?: { forceReset?: boolean }) {
         data: {
           rewardNumber,
           partnerName: g.partnerName,
-          recipientName: g.recipientName,
-          type: g.type,
+          recipientName: g.partnerName,
+          type: g.valueType,
           amount: g.amountMinor,
           currency: g.currency,
           amountBase: g.amountBaseMinor,
           fromActivity: g.fromActivity,
-          fromRewardRule: g.fromRewardRule,
+          fromRewardRule: g.ruleTitle,
+          sourceKey: `${g.ruleId}::${tx.id}`,
           status: isPaidTx ? "Paid" : isBatchReadyTx ? "Accepted" : "Pending",
           payoutNumber: isPaidTx
             ? "PO-2026-03"
@@ -1075,11 +1072,15 @@ export async function seedDatabase(options?: { forceReset?: boolean }) {
             ? "PO-2026-04"
             : "",
           payoutId: isPaidTx ? "pay-2" : isBatchReadyTx ? "pay-1" : null,
-          comment: g.comment,
+          comment: `Rule "${g.ruleTitle}" · FX ${g.fxRate} (${g.fxRateDate})`,
         },
       });
     }
   }
+  // New rewards continue numbering after the seeded ones
+  await prisma.$queryRawUnsafe(
+    `SELECT setval('"reward_number_seq"', GREATEST(1000, COALESCE((SELECT MAX(NULLIF(regexp_replace("rewardNumber", '[^0-9]', '', 'g'), '')::BIGINT) FROM "Reward"), 0)))::text AS n`
+  );
 
   // Partner Users (Main Contacts + PartnerTeamMembers)
   for (const p of seededPartners) {

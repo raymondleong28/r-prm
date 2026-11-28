@@ -11,7 +11,7 @@ import {
   DEAL_STAGES_10,
 } from "@/components/SharedEngines";
 import { RecordActivityLog } from "@/components/RecordActivityLog";
-import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
+import { SUPPORTED_CURRENCIES, toMajorUnits } from "@/lib/prmEngine";
 import { UserCheck, RefreshCw, Plus, Trash2 } from "lucide-react";
 
 const DEAL_TABS = [
@@ -449,8 +449,8 @@ export default function DealDetailPage() {
                       mutate(
                         "CREATE_TRANSACTION",
                         {
-                          name: `INV-${Math.floor(1000 + Math.random() * 9000)} · ${deal.company}`,
-                          amount: deal.amount,
+                          name: `${deal.name} · ${new Date().toISOString().slice(0, 10)}`,
+                          amount: toMajorUnits(deal.amount),
                           currency: deal.currency,
                           partnerName: deal.partnerName,
                           customerName: deal.company,
