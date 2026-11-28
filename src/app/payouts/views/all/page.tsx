@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { SUPPORTED_CURRENCIES, CURRENCY_LABELS } from "@/lib/prmEngine";
 import { Settings, X } from "lucide-react";
 
@@ -37,7 +38,7 @@ export default function PayoutsListPage() {
     setModalOpen(true);
   };
 
-  const filtered = payouts.filter((p) => {
+  const viewRows = payouts.filter((p) => {
     if (activeView !== "All" && p.status !== activeView) return false;
     if (
       search &&
@@ -49,6 +50,11 @@ export default function PayoutsListPage() {
     }
     return true;
   });
+  const list = useListControls("payouts", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,9 +72,10 @@ export default function PayoutsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Payouts"
-        countLabel={`${filtered.length} payouts`}
+        countLabel={`${list.filteredCount} payouts`}
         views={["All", "Draft", "Pending", "Ready", "Paid"]}
         activeView={activeView}
         onSelectView={setActiveView}

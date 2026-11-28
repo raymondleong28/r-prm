@@ -8,6 +8,7 @@ import {
   StatusBadge,
   DEAL_STAGES_10,
 } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 import { LayoutList, Kanban } from "lucide-react";
 
@@ -21,7 +22,7 @@ export default function DealsListPage() {
   const baseCurrency =
     settings?.account_settings?.mainCurrency || SUPPORTED_CURRENCIES[0];
 
-  const filtered = deals.filter((d) => {
+  const viewRows = deals.filter((d) => {
     // §3.5.1: Filter on the signed-in user's id
     if (activeView === "My Deals" && d.ownerId !== session?.userId) {
       return false;
@@ -37,6 +38,11 @@ export default function DealsListPage() {
     }
     return true;
   });
+  const list = useListControls("deals", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleStageChange = async (dealId: string, newStage: string) => {
     await mutate(
@@ -51,9 +57,10 @@ export default function DealsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Deals"
-        countLabel={`${filtered.length} deals`}
+        countLabel={`${list.filteredCount} deals`}
         views={["All", "My Deals", "Pending Deals"]}
         activeView={activeView}
         onSelectView={setActiveView}
@@ -87,12 +94,6 @@ export default function DealsListPage() {
                 <span>List</span>
               </button>
             </div>
-            <button
-              onClick={() => showToast("Kanban pipeline stages customized")}
-              className="text-xs font-semibold text-blue-600 hover:underline"
-            >
-              customize board
-            </button>
           </div>
         }
       />
@@ -101,7 +102,7 @@ export default function DealsListPage() {
         <div className="max-w-[1440px] mx-auto px-6 py-5 overflow-x-auto">
           <div className="flex space-x-4 min-w-[2350px] pb-4">
             {DEAL_STAGES_10.map((stage) => {
-              const stageDeals = filtered.filter((d) => d.stage === stage);
+              const stageDeals = list.filteredRows.filter((d) => d.stage === stage);
               const totalBase = stageDeals.reduce(
                 (acc, d) => acc + Number(d.amountBase || 0),
                 0

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { X } from "lucide-react";
 
 export default function AccountsMappingListPage() {
@@ -31,7 +32,7 @@ export default function AccountsMappingListPage() {
     setModalOpen(true);
   };
 
-  const filtered = accounts.filter((a) => {
+  const viewRows = accounts.filter((a) => {
     if (activeView === "All Overlaps" && !a.hasOverlap) return false;
     if (
       activeView === "Prospects vs Partner Customers" &&
@@ -53,6 +54,11 @@ export default function AccountsMappingListPage() {
     }
     return true;
   });
+  const list = useListControls("accounts", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,9 +73,10 @@ export default function AccountsMappingListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Accounts"
-        countLabel={`${filtered.length} accounts`}
+        countLabel={`${list.filteredCount} accounts`}
         views={[
           "All",
           "All Overlaps",

@@ -4,12 +4,10 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { downloadCsv, rowsToCsv } from "@/lib/csvExport";
+import { ListControlsBar } from "@/components/ListControlsBar";
+import type { ListControls } from "@/components/useListControls";
 import {
-  Search,
-  Filter,
   Download,
-  Columns,
-  ChevronDown,
   Plus,
   ArrowLeft,
   MessageSquare,
@@ -101,6 +99,8 @@ interface EntityListToolbarProps {
   onExport?: () => void;
   /** Rows currently shown in the list; Export downloads them as CSV. Without rows (or onExport) the Export button is hidden. */
   exportRows?: Array<Record<string, unknown>>;
+  /** Real date range, filters, saved views and paging (from useListControls). Without it those controls are hidden. */
+  controls?: ListControls;
 }
 
 export function EntityListToolbar({
@@ -111,7 +111,6 @@ export function EntityListToolbar({
   onSelectView,
   search,
   onSearchChange,
-  dateFilterLabel = "Creation date",
   primaryActionLabel,
   onPrimaryAction,
   secondaryActionLabel,
@@ -119,11 +118,9 @@ export function EntityListToolbar({
   extraRightControls,
   onExport,
   exportRows,
+  controls,
 }: EntityListToolbarProps) {
-  const { settings, mutate, showToast } = usePrm();
-  const [customViews, setCustomViews] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const { mutate, showToast } = usePrm();
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importObjectType, setImportObjectType] = useState("partners");
   const [importCsvText, setImportCsvText] = useState(
@@ -131,19 +128,6 @@ export function EntityListToolbar({
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [importPreview, setImportPreview] = useState<any | null>(null);
-
-  const allViews = [...views, ...customViews];
-  const baseCurrency = settings?.account_settings?.mainCurrency || "";
-  const customProps = Array.isArray(settings.custom_properties)
-    ? settings.custom_properties
-    : [];
-
-  const handleAddView = () => {
-    const name = `Custom View ${customViews.length + 1}`;
-    setCustomViews([...customViews, name]);
-    onSelectView(name);
-    showToast(`Saved view "${name}" created`);
-  };
 
   const handleRunCsvImport = async (dryRun: boolean) => {
     const res = await mutate("CSV_IMPORT", {
@@ -221,134 +205,14 @@ export function EntityListToolbar({
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-6 flex items-center justify-between border-t border-slate-100 pt-2">
-        <div className="flex items-center space-x-1 overflow-x-auto">
-          {allViews.map((v) => (
-            <button
-              key={v}
-              onClick={() => onSelectView(v)}
-              className={`px-3 py-2 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${
-                activeView === v
-                  ? "border-blue-600 text-blue-700 bg-blue-50/50"
-                  : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-          <button
-            onClick={handleAddView}
-            className="px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md whitespace-nowrap"
-          >
-            + Add view
-          </button>
-          <button
-            onClick={() => showToast("Manage views drawer opened")}
-            className="px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-md whitespace-nowrap"
-          >
-            Manage views
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-[1440px] mx-auto px-6 py-3 bg-slate-50/70 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search..."
-              className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs w-56 focus:outline-none focus:border-blue-600"
-            />
-          </div>
-
-          <button
-            onClick={() => showToast(`Filtered by ${dateFilterLabel}: All time`)}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center space-x-1"
-          >
-            <span>{dateFilterLabel}: All time</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </button>
-
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-3 py-1.5 rounded-lg border font-medium flex items-center space-x-1.5 ${
-              showFilters
-                ? "border-blue-600 bg-blue-50 text-blue-700"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            <span>Show filters</span>
-          </button>
-
-          <div className="relative">
-            <button
-              onClick={() => setViewMenuOpen(!viewMenuOpen)}
-              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center space-x-1"
-            >
-              <span>View</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-            {viewMenuOpen && (
-              <div className="absolute left-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-30">
-                {["Save", "Save as new", "Rename", "Delete"].map((act) => (
-                  <button
-                    key={act}
-                    onClick={() => {
-                      setViewMenuOpen(false);
-                      showToast(`View action "${act}" executed for "${activeView}"`);
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-blue-50 hover:text-blue-700"
-                  >
-                    {act}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => showToast("Column customizer saved")}
-            className="text-blue-600 hover:underline font-medium flex items-center space-x-1"
-          >
-            <Columns className="w-3.5 h-3.5" />
-            <span>edit columns</span>
-          </button>
-          <span className="text-slate-400">|</span>
-          <span className="text-slate-500">Show: 25 items</span>
-        </div>
-      </div>
-
-      {showFilters && (
-        <div className="max-w-[1440px] mx-auto px-6 py-2.5 bg-blue-50/60 border-t border-blue-100 flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-semibold text-blue-800">Active Quick Filters &amp; Custom Properties:</span>
-          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-slate-700">
-            Owner: Any
-          </span>
-          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-slate-700">
-            Currency: Multi-currency{baseCurrency ? ` (Base ${baseCurrency})` : ""}
-          </span>
-          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          {customProps.map((cp: any) => (
-            <span
-              key={cp.id || cp.name}
-              className="px-2 py-0.5 rounded bg-white border border-blue-300 text-blue-800 font-semibold"
-            >
-              Custom Property ({cp.object || "Object"}): {cp.label || cp.name} ({cp.type || "Text"})
-            </span>
-          ))}
-          <button
-            onClick={() => setShowFilters(false)}
-            className="text-blue-600 hover:underline ml-auto"
-          >
-            Hide filters
-          </button>
-        </div>
-      )}
+      <ListControlsBar
+        views={views}
+        activeView={activeView}
+        onSelectView={onSelectView}
+        search={search}
+        onSearchChange={onSearchChange}
+        controls={controls}
+      />
 
       {/* G9: CSV IMPORT WITH DRY-RUN PREVIEW & ROW-LEVEL ERRORS MODAL */}
       {importModalOpen && (

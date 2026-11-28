@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { currentIsoDateInTimezone } from "@/lib/prmEngine";
 import { X } from "lucide-react";
 
@@ -50,8 +51,23 @@ export default function TasksListPage() {
     setModalOpen(true);
   };
 
-  const filtered = tasks.filter((t) => {
-    if (activeView !== "All" && t.status !== activeView) return false;
+  const todayIso = currentIsoDateInTimezone(settings?.account_settings?.timezone);
+  // Status shown is worked out from the due date, so it never goes stale
+  const taskStatus = (t: { status?: string | null; dueDate?: string | null }) => {
+    if (String(t.status || "").toLowerCase() === "completed") return "Completed";
+    const due = String(t.dueDate || "").slice(0, 10);
+    if (!due) return "Upcoming";
+    if (due < todayIso) return "Overdue";
+    if (due === todayIso) return "Due Today";
+    return "Upcoming";
+  };
+  const viewRows = tasks.filter((t) => {
+    const done = String(t.status || "").toLowerCase() === "completed";
+    const due = String(t.dueDate || "").slice(0, 10);
+    if (activeView === "Completed" && !done) return false;
+    if (activeView === "Overdue" && (done || !due || due >= todayIso)) return false;
+    if (activeView === "Due Today" && (done || due !== todayIso)) return false;
+    if (activeView === "Upcoming" && (done || !due || due <= todayIso)) return false;
     if (
       search &&
       !`${t.name} ${t.associationName} ${t.assignedTo}`
@@ -62,6 +78,11 @@ export default function TasksListPage() {
     }
     return true;
   });
+  const list = useListControls("tasks", viewRows, {
+    dateField: "dueDate",
+    dateLabel: "Due date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,15 +93,15 @@ export default function TasksListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Tasks"
-        countLabel={`${filtered.length} tasks`}
+        countLabel={`${list.filteredCount} tasks`}
         views={["All", "Overdue", "Due Today", "Upcoming", "Completed"]}
         activeView={activeView}
         onSelectView={setActiveView}
         search={search}
         onSearchChange={setSearch}
-        dateFilterLabel="Due date"
         primaryActionLabel="New task"
         onPrimaryAction={openModal}
       />
@@ -121,7 +142,7 @@ export default function TasksListPage() {
                     />
                   </td>
                   <td className="py-3 px-3">
-                    <StatusBadge status={t.status} />
+                    <StatusBadge status={taskStatus(t)} />
                   </td>
                   <td
                     className={`py-3 px-3 font-bold ${

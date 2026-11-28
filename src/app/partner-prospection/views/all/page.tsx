@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { Kanban, LayoutList } from "lucide-react";
+import { useListControls } from "@/components/useListControls";
 import {
   readProspectionSettings,
   type ProspectionCardFieldId,
@@ -52,9 +54,10 @@ export default function PartnerProspectionPage() {
   const { partners, session, settings, mutate, setGlobalModal } = usePrm();
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const { stages, cardFields } = readProspectionSettings(settings?.account_settings);
 
-  const filtered = (partners as ProspectPartner[]).filter((p) => {
+  const viewRows = (partners as ProspectPartner[]).filter((p) => {
     if (activeView === "My Prospects" && p.ownerId !== session?.userId) {
       return false;
     }
@@ -63,6 +66,11 @@ export default function PartnerProspectionPage() {
     }
     return true;
   });
+  const list = useListControls("prospection", viewRows, {
+    dateField: "activeSince",
+    dateLabel: "Active since",
+  });
+  const filtered = viewMode === "board" ? list.filteredRows : list.pageRows;
 
   const unplaced = filtered.filter((p) => !stages.includes(String(p.prospectionStage || "")));
   const columns = unplaced.length > 0 ? [...stages, NOT_IN_A_COLUMN] : stages;
@@ -78,27 +86,83 @@ export default function PartnerProspectionPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Partners prospection"
-        countLabel={`${filtered.length} prospects`}
+        countLabel={`${list.filteredCount} prospects`}
         views={["All", "My Prospects"]}
         activeView={activeView}
         onSelectView={setActiveView}
         search={search}
         onSearchChange={setSearch}
-        dateFilterLabel="Active since"
         primaryActionLabel="New prospect"
         onPrimaryAction={() => setGlobalModal("add_partner")}
         extraRightControls={
-          <Link
-            href="/account/partners"
-            className="text-xs font-semibold text-blue-600 hover:underline mr-2"
-          >
-            customize board
-          </Link>
+          <div className="flex items-center space-x-2 mr-1">
+            <div className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+              {(["board", "list"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 ${
+                    viewMode === m ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {m === "board" ? <Kanban className="w-3.5 h-3.5" /> : <LayoutList className="w-3.5 h-3.5" />}
+                  <span>{m === "board" ? "Board" : "List"}</span>
+                </button>
+              ))}
+            </div>
+            <Link href="/account/partners" className="text-xs font-semibold text-blue-600 hover:underline">
+              customize board
+            </Link>
+          </div>
         }
       />
 
+      {viewMode === "list" && (
+        <div className="max-w-[1440px] mx-auto px-6 py-5">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 whitespace-nowrap">
+                  <th className="py-3 px-4 font-semibold">Name</th>
+                  <th className="py-3 px-3 font-semibold">Column</th>
+                  <th className="py-3 px-3 font-semibold">Status</th>
+                  <th className="py-3 px-3 font-semibold">Partner type</th>
+                  <th className="py-3 px-3 font-semibold">Program level</th>
+                  <th className="py-3 px-3 font-semibold">Owner</th>
+                  <th className="py-3 px-3 font-semibold">Country</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 whitespace-nowrap">
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-6 px-4 text-slate-400">No prospects match.</td>
+                  </tr>
+                )}
+                {filtered.map((p) => (
+                  <tr key={p.id} className="hover:bg-blue-50/40">
+                    <td className="py-3 px-4 font-bold">
+                      <Link href={`/partners/${p.id}`} className="text-blue-700 hover:underline">{p.name}</Link>
+                    </td>
+                    <td className="py-3 px-3">
+                      {stages.includes(String(p.prospectionStage || "")) ? p.prospectionStage : "Not in a column"}
+                    </td>
+                    <td className="py-3 px-3">{p.status ? <StatusBadge status={p.status} /> : "—"}</td>
+                    <td className="py-3 px-3">{p.partnerType || "—"}</td>
+                    <td className="py-3 px-3">{p.qualifyingLevel || "—"}</td>
+                    <td className="py-3 px-3">{p.owner || "Unassigned"}</td>
+                    <td className="py-3 px-3">{p.country || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {viewMode === "board" && (
       <div className="max-w-[1440px] mx-auto px-6 py-5 flex gap-5 overflow-x-auto">
         {columns.map((col) => {
           const items =
@@ -167,6 +231,7 @@ export default function PartnerProspectionPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

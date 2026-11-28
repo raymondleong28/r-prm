@@ -5,11 +5,13 @@ import {
   checkRateLimitKey,
   createServerSessionRow,
   getActiveServerSession,
+  hashPasswordWithRandomSalt,
   inspectActivationToken,
   recordAuthFailure,
   redeemActivationTokenAndSetPassword,
   resetRateLimitKey,
   revokeServerSessionById,
+  verifyPasswordWithStoredSalt,
 } from "@/lib/authSession";
 import {
   clearMfa,
@@ -314,6 +316,58 @@ export async function POST(req: NextRequest) {
           objectType: "User",
           objectId: target.id,
           summary: `Administrator ${current.email} reset two-step login for ${target.email} and signed them out`,
+        },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // 4b-v. Change own password (verifies the current one; signs out other sessions)
+    if (action === "change_password") {
+      const current = await getActiveServerSession(req);
+      if (!current || current.sessionId.startsWith("api-token:")) {
+        return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+      }
+      const pwKey = `pwchange:${current.email}`;
+      const pwRate = await checkRateLimitKey(pwKey);
+      if (!pwRate.allowed) {
+        return NextResponse.json(
+          { error: `Too many attempts. Try again in ${pwRate.retryAfterSeconds}s.` },
+          { status: 429 }
+        );
+      }
+      const userRow = await prisma.user.findUnique({ where: { id: current.userId } });
+      if (!userRow) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      const currentPassword = String(body.currentPassword || "");
+      const newPassword = String(body.newPassword || "");
+      if (!verifyPasswordWithStoredSalt(currentPassword, userRow.passwordHash)) {
+        await recordAuthFailure(pwKey);
+        return NextResponse.json({ error: "Your current password is wrong." }, { status: 400 });
+      }
+      if (newPassword.length < 12) {
+        return NextResponse.json({ error: "Use at least 12 characters." }, { status: 400 });
+      }
+      if (newPassword === currentPassword) {
+        return NextResponse.json({ error: "Choose a password you haven't just used." }, { status: 400 });
+      }
+      await resetRateLimitKey(pwKey);
+      await prisma.user.update({
+        where: { id: userRow.id },
+        data: { passwordHash: hashPasswordWithRandomSalt(newPassword) },
+      });
+      await prisma.session.updateMany({
+        where: { userId: userRow.id, revokedAt: null, NOT: { id: current.sessionId } },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.auditLog.create({
+        data: {
+          actor: current.email,
+          actorRole: `${current.identityType} (${current.role})`,
+          action: "PASSWORD_CHANGED",
+          objectType: "User",
+          objectId: userRow.id,
+          summary: `Password changed for ${current.email}; other sessions signed out`,
         },
       });
       return NextResponse.json({ ok: true });

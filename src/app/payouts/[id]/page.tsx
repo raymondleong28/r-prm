@@ -34,11 +34,7 @@ export default function PayoutDetailPage() {
   }
 
   const partner = partners.find((p) => p.name === payout.partnerName);
-  const bundledRewards = rewards.filter(
-    (r) =>
-      r.payoutNumber === payout.payoutNumber ||
-      r.partnerName === payout.partnerName
-  );
+  const bundledRewards = rewards.filter((r) => r.payoutId === payout.id);
   const issuerName = acct.legalEntityName || acct.accountName || "Workspace";
   const issuerAddress = acct.billingAddress || "Address not configured";
 
@@ -81,14 +77,21 @@ export default function PayoutDetailPage() {
               <FileText className="w-4 h-4" />
               <span>Generated Self-Invoice ({payout.invoiceRef})</span>
             </div>
-            <button
-              onClick={() =>
-                showToast(`Downloaded Self-Invoice ${payout.invoiceRef}.pdf`)
-              }
-              className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200"
-            >
-              Download PDF
-            </button>
+            {acct.selfInvoicingEnabled ? (
+              <a
+                href={`/api/payouts/${payout.id}/invoice`}
+                className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200"
+              >
+                Download PDF
+              </a>
+            ) : (
+              <Link
+                href="/account/payouts"
+                className="px-2.5 py-1 rounded bg-slate-50 text-slate-600 font-semibold border border-slate-200"
+              >
+                Turn on self-invoicing
+              </Link>
+            )}
           </div>
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">

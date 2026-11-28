@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 import { X } from "lucide-react";
 
@@ -22,9 +23,14 @@ export default function ProgramsListPage() {
     (m) => m.category === "onboarding_pipelines"
   );
 
-  const filtered = programs.filter(
+  const viewRows = programs.filter(
     (p) => !search || p.name.toLowerCase().includes(search.toLowerCase())
   );
+  const list = useListControls("programs", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,9 +50,10 @@ export default function ProgramsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Programs"
-        countLabel={`${filtered.length} programs`}
+        countLabel={`${list.filteredCount} programs`}
         views={["All"]}
         activeView={activeView}
         onSelectView={setActiveView}

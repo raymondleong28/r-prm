@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 
 export default function PartnersListPage() {
@@ -14,18 +15,12 @@ export default function PartnersListPage() {
   const baseCurrency =
     settings?.account_settings?.mainCurrency || SUPPORTED_CURRENCIES[0];
 
-  const filtered = partners.filter((p) => {
+  const viewRows = partners.filter((p) => {
     // §3.5.1: Filter on the signed-in user's id
     if (activeView === "My Partners" && p.ownerId !== session?.userId) {
       return false;
     }
     if (activeView === "Pending Applications" && p.status !== "Pending") {
-      return false;
-    }
-    if (
-      activeView === "Platform Partner" &&
-      p.partnerType !== "Technology Partner"
-    ) {
       return false;
     }
     if (
@@ -38,25 +33,28 @@ export default function PartnersListPage() {
     }
     return true;
   });
+  const list = useListControls("partners", viewRows, {
+    dateField: "activeSince",
+    dateLabel: "Active since",
+  });
+  const filtered = list.pageRows;
 
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Partners"
-        countLabel={`${filtered.length} partners`}
+        countLabel={`${list.filteredCount} partners`}
         views={[
           "All",
           "My Partners",
           "Pending Applications",
-          "Weekly Report",
-          "Platform Partner",
         ]}
         activeView={activeView}
         onSelectView={setActiveView}
         search={search}
         onSearchChange={setSearch}
-        dateFilterLabel="Active since"
         primaryActionLabel="Add a new partner"
         onPrimaryAction={() => setGlobalModal("add_partner")}
       />

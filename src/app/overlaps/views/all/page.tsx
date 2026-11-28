@@ -4,13 +4,14 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 
 export default function OverlapsListPage() {
   const { accounts, mutate } = usePrm();
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
 
-  const overlaps = accounts.filter((a) => {
+  const overlapRows = accounts.filter((a) => {
     if (!a.hasOverlap) return false;
     if (
       activeView === "Prospects vs Partner Customers" &&
@@ -32,13 +33,19 @@ export default function OverlapsListPage() {
     }
     return true;
   });
+  const list = useListControls("overlaps", overlapRows, {
+    dateField: "overlapDate",
+    dateLabel: "Overlap date",
+  });
+  const overlaps = list.pageRows;
 
   return (
     <div>
       <EntityListToolbar
-        exportRows={overlaps}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Overlaps"
-        countLabel={`${overlaps.length} overlaps`}
+        countLabel={`${list.filteredCount} overlaps`}
         views={[
           "All",
           "Prospects vs Partner Customers",
@@ -48,7 +55,6 @@ export default function OverlapsListPage() {
         onSelectView={setActiveView}
         search={search}
         onSearchChange={setSearch}
-        dateFilterLabel="Overlap date"
         extraRightControls={
           <Link
             href="/data-sources"

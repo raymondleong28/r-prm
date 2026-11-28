@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 import { X, RotateCcw } from "lucide-react";
 
@@ -40,7 +41,7 @@ export default function RewardsListPage() {
     setModalOpen(true);
   };
 
-  const filtered = rewards.filter((r) => {
+  const viewRows = rewards.filter((r) => {
     if (
       activeView === "Due" &&
       !["Pending", "Accepted"].includes(r.status)
@@ -57,6 +58,11 @@ export default function RewardsListPage() {
     }
     return true;
   });
+  const list = useListControls("rewards", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,9 +80,10 @@ export default function RewardsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Rewards"
-        countLabel={`${filtered.length} rewards`}
+        countLabel={`${list.filteredCount} rewards`}
         views={["All", "Due", "Paid"]}
         activeView={activeView}
         onSelectView={setActiveView}

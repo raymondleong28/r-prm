@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { X } from "lucide-react";
 
 export default function DataSourcesPage() {
@@ -37,9 +38,14 @@ export default function DataSourcesPage() {
     setModalOpen(true);
   };
 
-  const filtered = dataSources.filter(
+  const viewRows = dataSources.filter(
     (ds) => !search || ds.name.toLowerCase().includes(search.toLowerCase())
   );
+  const list = useListControls("data-sources", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,9 +66,10 @@ export default function DataSourcesPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Data sources"
-        countLabel={`${filtered.length} sources`}
+        countLabel={`${list.filteredCount} sources`}
         views={["All"]}
         activeView={activeView}
         onSelectView={setActiveView}

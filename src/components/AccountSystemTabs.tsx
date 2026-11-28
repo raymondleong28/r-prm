@@ -2,12 +2,12 @@
 
 import React from "react";
 import { StatusBadge } from "@/components/SharedEngines";
+import { ApiTokensPanel } from "@/components/ApiTokensPanel";
 import {
   Plus,
   Database,
   AlertTriangle,
   Code2,
-  Check,
   History,
 } from "lucide-react";
 
@@ -27,13 +27,6 @@ interface AccountSystemTabsProps {
   setResetConfirmationText: (val: string) => void;
   showToast: (msg: string) => void;
   currentOrigin: string;
-  workspaceSlug: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  apiTokens: any[];
-  createdTokenPlaintext: string | null;
-  newTokenName: string;
-  setNewTokenName: (val: string) => void;
-  handleCreateToken: (e: React.FormEvent) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mutate: (action: string, payload?: any, successMessage?: string) => Promise<any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,12 +48,6 @@ export function AccountSystemTabs({
   setResetConfirmationText,
   showToast,
   currentOrigin,
-  workspaceSlug,
-  apiTokens,
-  createdTokenPlaintext,
-  newTokenName,
-  setNewTokenName,
-  handleCreateToken,
   mutate,
   auditLogs,
 }: AccountSystemTabsProps) {
@@ -197,83 +184,9 @@ export function AccountSystemTabs({
         <div className="space-y-4">
           <div className="flex items-center space-x-2 border-b border-slate-100 pb-2">
             <Code2 className="w-4 h-4 text-blue-600" />
-            <h2 className="text-base font-bold text-slate-900">
-              JavaScript Tracking Snippet (r.js) &amp; API Access Tokens
-            </h2>
+            <h2 className="text-base font-bold text-slate-900">Integration</h2>
           </div>
-          <div className="p-3.5 rounded-xl bg-slate-900 text-blue-200 font-mono text-[11px] overflow-x-auto">
-            {`<script src="${currentOrigin || ""}/r.js" data-account="${workspaceSlug}" async></script>`}
-          </div>
-          <button
-            onClick={() => showToast("Verified r.js snippet configuration!")}
-            className="px-3.5 py-1.5 rounded-lg bg-blue-600 text-white font-semibold flex items-center space-x-1"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>Verify installation</span>
-          </button>
-
-          <div className="pt-3 border-t border-slate-200 space-y-3">
-            <h3 className="font-bold text-sm text-slate-900">
-              API Access Tokens ({apiTokens.length}) — Shown Once at Creation,
-              Stored Hashed
-            </h3>
-
-            {createdTokenPlaintext && (
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 space-y-1">
-                <p className="font-bold">
-                  Copy your new API token now — it will never be displayed in
-                  plaintext again:
-                </p>
-                <p className="font-mono bg-white px-3 py-1.5 rounded border border-emerald-200 select-all">
-                  {createdTokenPlaintext}
-                </p>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateToken} className="flex gap-2">
-              <input
-                value={newTokenName}
-                onChange={(e) => setNewTokenName(e.target.value)}
-                placeholder="New token name (e.g. ERP Webhook Sync)"
-                className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg"
-              />
-              <button
-                type="submit"
-                className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-semibold"
-              >
-                + New token
-              </button>
-            </form>
-
-            <div className="divide-y divide-slate-100">
-              {apiTokens.map((tk) => (
-                <div
-                  key={tk.id}
-                  className="py-2.5 flex items-center justify-between"
-                >
-                  <div>
-                    <p className="font-bold text-slate-900">{tk.name}</p>
-                    <p className="text-slate-500 font-mono">{tk.subtitle}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <StatusBadge status={tk.status} />
-                    <button
-                      onClick={() =>
-                        mutate(
-                          "DELETE_MANAGE_ITEM",
-                          { id: tk.id },
-                          `Revoked API token "${tk.name}"`
-                        )
-                      }
-                      className="px-2.5 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 font-semibold"
-                    >
-                      Revoke
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ApiTokensPanel origin={currentOrigin} onToast={showToast} />
         </div>
       )}
 

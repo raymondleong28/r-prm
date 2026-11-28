@@ -55,3 +55,24 @@ Judgement calls:
 - `Partner.partnerType` default changed from "Reseller" to empty for new rows; existing rows unchanged.
 
 New dependency: `qrcode` (renders the authenticator QR code).
+
+---
+
+## Round 1b report (§3.6 no fake controls) — 28 Nov 2026, writer: Claude
+
+| Item | Check | Result |
+|---|---|---|
+| List filters / paging / saved views | Fixture 35 (date ranges, operators, paging, saved-view validation); browser on Partners: filter Country is Singapore → "3 of 8 items", saved view survives reload, "Last 7 days" filter applies | Pass |
+| API tokens | Fixture 35 (hash only, bearer auth, altered token rejected, token can't manage tokens, revoke); production server: `curl -H "Authorization: Bearer …" /api/partners` → 200 with 8 partners; random token → 401; no auth → 401 | Pass |
+| Self-billed invoice PDF | Fixture 35 (409 when off, real PDF, other partner → 404); browser download; PDF text shows 2 reward lines, total SGD 3,780.00 = payout PO-2026-04 | Pass |
+| Password change | Fixture 35 (wrong/short refused, new works, old fails, other sessions revoked, current kept) | Pass |
+| Program rename | Fixture 35 (partners show new name, empty name refused) | Pass |
+| Toast-only buttons | `grep -rn "onClick={() => showToast(" src` | None left |
+| Typecheck / 35 fixtures / build | cloud PostgreSQL 16 harness | Pass |
+
+Judgement calls:
+- Saved views are workspace-wide (stored in setting `saved_views`), like shared views in the reference product.
+- Payout detail now lists only rewards linked to that payout (it previously listed every reward of the partner).
+- A token acts as the administrator who created it and stops working if that person is disabled or no longer an administrator.
+
+New dependency: `pdf-lib` (generates the self-billed invoice PDF).

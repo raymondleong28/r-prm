@@ -10,6 +10,7 @@ import {
   NotesAndActivitiesTab,
   DEAL_STAGES_10,
 } from "@/components/SharedEngines";
+import { RecordActivityLog } from "@/components/RecordActivityLog";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 import { UserCheck, RefreshCw, Plus, Trash2 } from "lucide-react";
 
@@ -270,17 +271,11 @@ export default function DealDetailPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-blue-200 p-4 shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-2">
               <span className="font-bold text-slate-900 text-sm">
                 CRM sync
               </span>
-              <button
-                onClick={() => showToast("CRM deal sync logs checked")}
-                className="text-blue-600 hover:underline font-semibold flex items-center space-x-1"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>View logs</span>
-              </button>
+              <RecordActivityLog objectId={deal.id} />
             </div>
             <p className="text-slate-500">
               Deal ID: {deal.hubspotDealId || "Not synced"}

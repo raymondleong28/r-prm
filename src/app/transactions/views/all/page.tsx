@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import {
   SUPPORTED_CURRENCIES,
   CURRENCY_LABELS,
@@ -45,7 +46,7 @@ export default function TransactionsListPage() {
     setModalOpen(true);
   };
 
-  const filtered = transactions.filter((t) => {
+  const viewRows = transactions.filter((t) => {
     if (activeView === "This Month" && t.monthKey !== currentMonthKey)
       return false;
     if (
@@ -63,6 +64,11 @@ export default function TransactionsListPage() {
     }
     return true;
   });
+  const list = useListControls("transactions", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,9 +86,10 @@ export default function TransactionsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Transactions"
-        countLabel={`${filtered.length} transactions`}
+        countLabel={`${list.filteredCount} transactions`}
         views={["All", "This Month", "This Quarter"]}
         activeView={activeView}
         onSelectView={setActiveView}

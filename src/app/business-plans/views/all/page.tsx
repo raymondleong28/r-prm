@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import {
   SUPPORTED_CURRENCIES,
   currentIsoDateInTimezone,
@@ -43,7 +44,7 @@ export default function BusinessPlansListPage() {
     setModalOpen(true);
   };
 
-  const filtered = businessPlans.filter((bp) => {
+  const viewRows = businessPlans.filter((bp) => {
     if (activeView !== "All" && bp.status !== activeView) return false;
     if (
       search &&
@@ -55,6 +56,11 @@ export default function BusinessPlansListPage() {
     }
     return true;
   });
+  const list = useListControls("business-plans", viewRows, {
+    dateField: "startDate",
+    dateLabel: "Start date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,15 +75,15 @@ export default function BusinessPlansListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Business plans"
-        countLabel={`${filtered.length} business plans`}
+        countLabel={`${list.filteredCount} business plans`}
         views={["All", "Draft", "Active"]}
         activeView={activeView}
         onSelectView={setActiveView}
         search={search}
         onSearchChange={setSearch}
-        dateFilterLabel="Start date"
         primaryActionLabel="Add a new business plan"
         onPrimaryAction={openModal}
       />

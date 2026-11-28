@@ -119,6 +119,17 @@ export async function middleware(req: NextRequest) {
   const cookieVal = req.cookies.get("rprm_session")?.value;
   const session = await verifyCookieEdge(cookieVal);
 
+  // Integrations may call the API with "Authorization: Bearer rprm_..."; each route handler
+  // verifies the token against the database (getActiveServerSession), so only the format is checked here.
+  const bearerHeader = req.headers.get("authorization") || "";
+  if (
+    pathname.startsWith("/api/") &&
+    !session &&
+    /^Bearer\s+rprm_[A-Za-z0-9_-]{43}$/i.test(bearerHeader.trim())
+  ) {
+    return NextResponse.next();
+  }
+
   // API and file download routes: return 401 JSON if no valid session cookie
   if (pathname.startsWith("/api/") || pathname.startsWith("/uploads")) {
     if (!session) {

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { X, Trash2, UserCheck } from "lucide-react";
 
 export default function PartnerTeamMembersPage() {
@@ -42,7 +43,7 @@ export default function PartnerTeamMembersPage() {
     setModalOpen(true);
   };
 
-  const filtered = teamMembers.filter((m) => {
+  const viewRows = teamMembers.filter((m) => {
     if (activeView !== "All" && m.status !== activeView) return false;
     if (
       search &&
@@ -54,6 +55,11 @@ export default function PartnerTeamMembersPage() {
     }
     return true;
   });
+  const list = useListControls("team-members", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -88,9 +94,10 @@ export default function PartnerTeamMembersPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Team members"
-        countLabel={`${filtered.length} members`}
+        countLabel={`${list.filteredCount} members`}
         views={["All", "Pending", "Sent", "Expired"]}
         activeView={activeView}
         onSelectView={setActiveView}

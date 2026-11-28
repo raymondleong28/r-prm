@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import {
   SUPPORTED_CURRENCIES,
   currentIsoDateInTimezone,
@@ -52,7 +53,7 @@ export default function CustomersListPage() {
     setModalOpen(true);
   };
 
-  const filtered = customers.filter((c) => {
+  const viewRows = customers.filter((c) => {
     if (activeView === "Paying" && c.status !== "Paying") return false;
     if (
       search &&
@@ -64,6 +65,11 @@ export default function CustomersListPage() {
     }
     return true;
   });
+  const list = useListControls("customers", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,9 +84,10 @@ export default function CustomersListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Customers"
-        countLabel={`${filtered.length} customers`}
+        countLabel={`${list.filteredCount} customers`}
         views={["All", "Paying"]}
         activeView={activeView}
         onSelectView={setActiveView}

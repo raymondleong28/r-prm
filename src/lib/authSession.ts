@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { NextRequest } from "next/server";
 import { prisma } from "./prisma";
+import { bearerTokenFrom, resolveApiToken } from "./apiTokens";
 import { loadRequiredConfig, getAppBaseUrl } from "./config";
 
 /**
@@ -149,7 +150,35 @@ export async function getActiveServerSession(
 ): Promise<RprmSession | null> {
   const rawCookie = req.cookies.get("rprm_session")?.value;
   const parsed = parseAndVerifySessionCookieValue(rawCookie);
-  if (!parsed) return null;
+  if (!parsed) {
+    // Integrations: "Authorization: Bearer rprm_..." acts as the administrator who created the token
+    const bearer = bearerTokenFrom(req.headers?.get?.("authorization"));
+    if (!bearer) return null;
+    const resolved = await resolveApiToken(bearer);
+    if (!resolved) return null;
+    if (
+      process.env.NODE_ENV === "production" &&
+      (resolved.user.isTestAccount || resolved.user.email.endsWith(".example.com"))
+    ) {
+      return null;
+    }
+    return {
+      sessionId: `api-token:${resolved.row.id}`,
+      userId: resolved.user.id,
+      email: resolved.user.email,
+      name: resolved.user.name,
+      identityType: "coworker",
+      role: resolved.user.role,
+      isMainContact: false,
+      partnerId: null,
+      partnerName: null,
+      impersonatingPartnerId: null,
+      mfaEnrolled: false,
+      mfaVerified: true,
+      issuedAt: resolved.row.createdAt.getTime(),
+      expiresAt: Date.now() + 60_000,
+    };
+  }
 
   const row = await prisma.session.findUnique({
     where: { id: parsed.sessionId },

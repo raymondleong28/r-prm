@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { AccountMfaSection } from "@/components/AccountMfaSection";
+import { ChangePasswordForm } from "@/components/ChangePasswordForm";
 import { useParams } from "next/navigation";
 import { usePrm } from "@/context/PrmContext";
 import { StatusBadge } from "@/components/SharedEngines";
@@ -35,13 +37,6 @@ export default function UserPreferencesRootPage() {
     rawPrefs.timezone || settings.account_settings?.timezone || "UTC"
   );
 
-  // Enrolment secret shown ONLY during interactive enrolment (§3.5.1)
-  const [enrolmentInfo, setEnrolmentInfo] = useState<{
-    secret: string;
-    otpauthUri: string;
-    recoveryCodes: string[];
-  } | null>(null);
-
   useEffect(() => {
     const p = settings.user_preferences;
     if (!p) return;
@@ -62,26 +57,6 @@ export default function UserPreferencesRootPage() {
     "New Partner Application": { inApp: true, email: true },
     "Reward Pending Validation": { inApp: true, email: false },
     "Account Overlap Detected": { inApp: true, email: true },
-  };
-
-  const mfaEnrolled = Boolean(session?.mfaEnrolled || enrolmentInfo);
-
-  const handleEnrollMfa = async () => {
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "enroll_mfa" }),
-    });
-    const json = await res.json();
-    if (res.ok && json.enrollment) {
-      setEnrolmentInfo(json.enrollment);
-      await refresh();
-      showToast(
-        "Authenticator enrolled! Save your secret and recovery codes now."
-      );
-    } else {
-      showToast(json.error || "Failed to enrol authenticator");
-    }
   };
 
   return (
@@ -213,92 +188,24 @@ export default function UserPreferencesRootPage() {
           )}
 
           {activeTab === "security" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h2 className="text-base font-bold text-slate-900">
-                  Security — Password &amp; Authenticator MFA
-                </h2>
-                <span
-                  className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                    mfaEnrolled
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  {mfaEnrolled ? "TOTP Active" : "MFA Not Enrolled"}
-                </span>
-              </div>
-
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-slate-900">
-                      Authenticator App (TOTP)
-                    </p>
-                    <p className="text-slate-600">
-                      {mfaEnrolled
-                        ? "Your account has an active TOTP authenticator enrolled."
-                        : "Enrol an authenticator app to protect your account with 6-digit codes."}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleEnrollMfa}
-                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                  >
-                    {mfaEnrolled
-                      ? "Rotate Authenticator"
-                      : "Enrol Authenticator"}
-                  </button>
-                </div>
-
-                {enrolmentInfo && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
-                      <span className="text-[10px] font-bold uppercase text-emerald-700">
-                        New TOTP Secret (Shown Once During Enrolment)
-                      </span>
-                      <p className="font-mono font-bold text-slate-900 select-all">
-                        {enrolmentInfo.secret}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
-                      <span className="text-[10px] font-bold uppercase text-emerald-700">
-                        One-Time Recovery Codes
-                      </span>
-                      <div className="grid grid-cols-2 gap-1 font-mono text-[11px] text-slate-800">
-                        {enrolmentInfo.recoveryCodes.map((rc) => (
-                          <span key={rc}>{rc}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+            <div className="space-y-5">
+              <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-2">
+                Security — password and two-step login
+              </h2>
+              <AccountMfaSection
+                email={session?.email || ""}
+                enrolled={Boolean(session?.mfaEnrolled)}
+                requiredForMe={Boolean(
+                  session?.identityType === "partner"
+                    ? settings.account_settings?.requireMfaPartners
+                    : settings.account_settings?.requireMfaCoworkers
                 )}
+                onChanged={refresh}
+                onToast={showToast}
+              />
+              <div className="p-4 rounded-xl border border-slate-200">
+                <ChangePasswordForm onToast={showToast} />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  type="password"
-                  placeholder="Current password"
-                  className="px-3 py-2 border border-slate-300 rounded-lg"
-                />
-                <input
-                  type="password"
-                  placeholder="New password"
-                  className="px-3 py-2 border border-slate-300 rounded-lg"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm password"
-                  className="px-3 py-2 border border-slate-300 rounded-lg"
-                />
-              </div>
-              <button
-                onClick={() => showToast("Password settings updated")}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold"
-              >
-                Update Password
-              </button>
             </div>
           )}
 

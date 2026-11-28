@@ -21,7 +21,6 @@ export default function PartnerOnboardingPage() {
     (m) => m.category === "onboarding_pipelines"
   );
   const [pipeline, setPipeline] = useState("");
-  const [assignedProgram, setAssignedProgram] = useState("");
   const [visibleToMainContacts, setVisibleToMainContacts] = useState(true);
 
   const activePipelineName =
@@ -133,24 +132,45 @@ export default function PartnerOnboardingPage() {
             )}
           </select>
 
-          <select
-            value={assignedProgram || programs[0]?.name || ""}
-            onChange={(e) => {
-              setAssignedProgram(e.target.value);
-              showToast(`Pipeline bound to program "${e.target.value}"`);
-            }}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 bg-white"
-          >
-            {programs.length === 0 ? (
-              <option value="">No programs yet</option>
-            ) : (
-              programs.map((prog) => (
-                <option key={prog.id} value={prog.name}>
-                  Assigned Program: {prog.name}
-                </option>
-              ))
-            )}
-          </select>
+          {(() => {
+            const usingPrograms = programs.filter(
+              (prog) => String(prog.onboardingPipelineId || "") === activePipelineName
+            );
+            return (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-500">
+                  Used by:{" "}
+                  {usingPrograms.length > 0
+                    ? usingPrograms.map((p) => p.name).join(", ")
+                    : "no program yet"}
+                </span>
+                {programs.length > 0 && (
+                  <select
+                    value=""
+                    onChange={async (e) => {
+                      const prog = programs.find((p) => p.id === e.target.value);
+                      if (!prog) return;
+                      await mutate(
+                        "UPDATE_PROGRAM",
+                        { id: prog.id, data: { onboardingPipelineId: activePipelineName } },
+                        `"${prog.name}" now onboards partners with "${activePipelineName}"`
+                      );
+                    }}
+                    className="px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-700 bg-white"
+                  >
+                    <option value="">Use this pipeline for a program…</option>
+                    {programs
+                      .filter((p) => String(p.onboardingPipelineId || "") !== activePipelineName)
+                      .map((prog) => (
+                        <option key={prog.id} value={prog.id}>
+                          {prog.name}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </div>
+            );
+          })()}
 
           <label className="flex items-center space-x-1.5 text-xs text-slate-700">
             <input

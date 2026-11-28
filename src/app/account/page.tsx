@@ -52,10 +52,6 @@ export default function AccountRootPage() {
   const [propObject, setPropObject] = useState("Leads");
   const [newPropName, setNewPropName] = useState("");
   const [newPropType, setNewPropType] = useState("Single line text");
-  const [newTokenName, setNewTokenName] = useState("");
-  const [createdTokenPlaintext, setCreatedTokenPlaintext] = useState<
-    string | null
-  >(null);
   const [resetConfirmationText, setResetConfirmationText] = useState("");
 
   const acct = settings.account_settings || {};
@@ -220,7 +216,6 @@ export default function AccountRootPage() {
   const customProps = manageItems.filter(
     (m) => m.category === "custom_properties"
   );
-  const apiTokens = manageItems.filter((m) => m.category === "api_tokens");
   const emailTemplates = manageItems.filter(
     (m) => m.category === "email_templates"
   );
@@ -282,33 +277,6 @@ export default function AccountRootPage() {
       `Custom property "${newPropName}" added to ${propObject}!`
     );
     setNewPropName("");
-  };
-
-  const handleCreateToken = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTokenName) return;
-    const rawSecret = `rprm_live_${Math.random()
-      .toString(36)
-      .slice(2, 12)}_${Date.now().toString(36)}`;
-    const maskedHash = `${rawSecret.slice(0, 12)}...${rawSecret.slice(
-      -4
-    )} (SHA-256 Hashed)`;
-    setCreatedTokenPlaintext(rawSecret);
-
-    await mutate(
-      "CREATE_MANAGE_ITEM",
-      {
-        category: "api_tokens",
-        name: newTokenName,
-        subtitle: `${maskedHash} · Created by ${
-          session?.name || session?.email || "Administrator"
-        } · Last used: Never`,
-        status: "Active",
-        metadata: { maskedHash },
-      },
-      `API Token "${newTokenName}" created! Copy the raw token now—it will not be shown again.`
-    );
-    setNewTokenName("");
   };
 
   const currentOrigin =
@@ -1063,14 +1031,6 @@ export default function AccountRootPage() {
             setResetConfirmationText={setResetConfirmationText}
             showToast={showToast}
             currentOrigin={currentOrigin}
-            workspaceSlug={
-              acct.workspaceId || acct.workspaceSlug || "workspace"
-            }
-            apiTokens={apiTokens}
-            createdTokenPlaintext={createdTokenPlaintext}
-            newTokenName={newTokenName}
-            setNewTokenName={setNewTokenName}
-            handleCreateToken={handleCreateToken}
             mutate={mutate}
             auditLogs={auditLogs}
           />

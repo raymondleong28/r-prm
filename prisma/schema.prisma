@@ -394,3 +394,15 @@ model LoginLockout {
   lockedUntil DateTime?
   updatedAt   DateTime  @updatedAt
 }
+
+model ApiToken {
+  id             String    @id @default(cuid())
+  name           String
+  prefix         String    // first characters of the token, shown so people can tell tokens apart
+  tokenHash      String    @unique // SHA-256 of the full token; the token itself is never stored
+  createdById    String
+  createdByEmail String
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+}

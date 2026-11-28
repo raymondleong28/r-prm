@@ -155,12 +155,18 @@ Writer from 28 Nov 2026: Claude (Ray's Claude session). One writer at a time sti
 - Prospection board columns and card fields stored in Partner settings; partner types saved; no made-up "Standard" level or "Reseller" type.
 - Export on every list downloads real CSV (formula-escaped, no internal fields). Data sources show Creation date.
 
-**Rule from now on: no fake controls.** A button either does the real thing or is removed. Still fake (each shows only a toast) — fix or remove:
-1. Self-invoice "Download PDF" on payout detail (no PDF is generated).
-2. API tokens in Account → Integration (made with `Math.random()`, never usable, "SHA-256 hashed" label untrue). Use `crypto.randomBytes`, store a hash, check it on API requests, show once.
-3. List toolbar: "Manage views", date filter, view actions, "edit columns", "Show: 25 items" — make real or remove.
-4. Deals board "customize" (stages), CRM "sync logs" buttons on lead/deal detail, tracking-snippet "verify".
-5. List/board toggle on Prospection and Deals (the reference product has both views).
+**Rule from now on: no fake controls.** A button either does the real thing or is removed.
+
+**Done in Round 1b (no fake controls) — keep green (Fixture 35):**
+- Self-billed invoice PDF generated from the payout's linked rewards (`/api/payouts/[id]/invoice`; partners only their own; refused when self-invoicing is off).
+- API tokens: `crypto.randomBytes`, SHA-256 hash stored, shown once, `Authorization: Bearer` works on every API route, revoke stops it immediately, tokens can't manage tokens.
+- List toolbar on every list: real date-range filter, property filters, paging (25/50/100), saved views (add, save, rename, delete; stored in setting `saved_views`). "Edit columns" removed.
+- Password change in user settings is real (current password checked, other sessions signed out). Program "Rename" is real (partner and deal copies of the name follow). Onboarding pipeline ↔ program binding saves. Deal/lead "View log" shows the record's audit entries. Prospection has a list/board toggle. Task views and badges are worked out from the due date. Dead built-in views ("Weekly Report", "Platform Partner") removed.
+
+**Still to build (removed for now, not faked):**
+1. Configurable deal stages (fixed 10 stages today) — do in R2 with the "deal stage changed" trigger.
+2. Referral tracking links: no redirect or click counting exists and the tracking snippet was removed. Build `/r/<code>` redirect + click/visitor counting in R2 with the "website visit" trigger.
+3. Column chooser for list tables.
 
 **Reward rules — staged rounds (the biggest gap):**
 The reference product's reward form, observed field by field:
@@ -235,6 +241,8 @@ Rounds (each: tests first, one commit, all fixtures green, Ray checks before the
 | `npm test` with `.env` pointing at a database not named *test*/*verify* | Refuses, exit 2 |
 | Two-step login with Google/Microsoft Authenticator | QR scan works; 6-digit codes accepted; refresh keeps the same setup; 8 recovery codes shown once |
 | Any toast-only button (`grep` for `showToast` as the only action) | None |
+| API call with `Authorization: Bearer <token>` | Works; revoked token → 401 |
+| Payout "Download PDF" | A real PDF whose total equals the payout |
 | Recurring-program reward rules (R4 fixture) | Every amount and date matches Ray-confirmed numbers |
 | Fresh workspace "Test Co" in MYR | Every screen shows Test Co and MYR; no demo names; chart months end at the current month |
 | Convert lead to deal | Asks for amount; no fixed value |

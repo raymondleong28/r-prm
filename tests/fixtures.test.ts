@@ -78,6 +78,14 @@ import {
 } from "../src/lib/mfa";
 import { readProspectionSettings } from "../src/lib/prospectionSettings";
 import { escapeCsvCell, rowsToCsv } from "../src/lib/csvExport";
+import {
+  applyListState,
+  cleanSavedViews,
+  matchesFilter,
+  pageOf,
+} from "../src/lib/listControls";
+import { GET as apiTokensGet, POST as apiTokensPost, DELETE as apiTokensDelete } from "../src/app/api/api-tokens/route";
+import { GET as payoutInvoiceGet } from "../src/app/api/payouts/[id]/invoice/route";
 
 async function runFixtures() {
   // Safety lock: never run the destructive suite against a real database
@@ -1946,7 +1954,144 @@ async function runFixtures() {
     "✓ Fixture 34 passed (§3.6): configurable prospection columns and card fields, no made-up partner type, CSV export with formula escaping"
   );
 
-  console.log("\nALL 34 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
+  // Fixture 35 (§3.6 no fake controls): list filters/paging/saved views, API tokens, self-invoice PDF,
+  // password change, program rename
+  const now35 = new Date("2026-06-15T12:00:00Z");
+  const sampleRows = [
+    { id: "a", name: "Alpha", status: "Active", amount: 500, createdAt: "2026-06-10T00:00:00Z" },
+    { id: "b", name: "Beta", status: "Pending", amount: 50, createdAt: "2026-03-01T00:00:00Z" },
+    { id: "c", name: "Gamma", status: "", amount: 1500, createdAt: "2025-12-01T00:00:00Z" },
+  ];
+  assert.deepEqual(
+    applyListState(sampleRows, { dateRange: "last30", filters: [], pageSize: 25 }, "createdAt", now35).map((r) => r.id),
+    ["a"],
+    "Last 30 days keeps only recent rows"
+  );
+  assert.deepEqual(
+    applyListState(sampleRows, { dateRange: "thisYear", filters: [{ field: "amount", operator: "gt", value: "100" }], pageSize: 25 }, "createdAt", now35).map((r) => r.id),
+    ["a"],
+    "Date range and number filter combine"
+  );
+  assert.equal(matchesFilter(sampleRows[2], { field: "status", operator: "isEmpty", value: "" }), true);
+  assert.equal(matchesFilter(sampleRows[1], { field: "name", operator: "contains", value: "ET" }), true, "contains is case-insensitive");
+  assert.equal(matchesFilter(sampleRows[0], { field: "status", operator: "isNot", value: "active" }), false);
+  const paged35 = pageOf(Array.from({ length: 60 }, (_, i) => i), 3, 25);
+  assert.deepEqual([paged35.page, paged35.pageCount, paged35.rows.length], [3, 3, 10], "Paging");
+  assert.equal(pageOf([1, 2], 9, 25).page, 1, "Out-of-range page clamps");
+  assert.deepEqual(
+    cleanSavedViews([{ name: " Big deals ", baseView: "All", dateRange: "bogus", filters: [{ field: "amount", operator: "gt", value: "1000" }, { field: "x", operator: "drop" }], pageSize: 7 }, { nope: 1 }]),
+    [{ name: "Big deals", baseView: "All", dateRange: "all", filters: [{ field: "amount", operator: "gt", value: "1000" }], pageSize: 25 }],
+    "Saved views are validated"
+  );
+
+  // API tokens: admin creates, token authenticates API calls, revoked token stops working
+  const adminSess35 = await createServerSessionRow({ userId: alexUser.id, identityType: "coworker", ttlMs: 3600 * 1000 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cookieReq = (cookie: string, init: { url?: string; method?: string; body?: unknown } = {}): any => ({
+    url: init.url || "http://127.0.0.1:3000/api/api-tokens",
+    headers: new Headers({ "content-type": "application/json" }),
+    cookies: { get: (n: string) => (n === "rprm_session" ? { value: cookie } : undefined) },
+    json: async () => init.body,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bearerReq = (token: string, url = "http://127.0.0.1:3000/api/api-tokens"): any => ({
+    url,
+    headers: new Headers({ authorization: `Bearer ${token}` }),
+    cookies: { get: () => undefined },
+    json: async () => ({}),
+  });
+  const createdTok = await apiTokensPost(cookieReq(adminSess35.cookieValue, { body: { name: "n8n fixture" } }));
+  assert.equal(createdTok.status, 200, "Admin can create a token");
+  const createdTokJson = await createdTok.json();
+  const rawToken: string = createdTokJson.token;
+  assert.match(rawToken, /^rprm_[A-Za-z0-9_-]{43}$/, "Token format");
+  const tokRow = await prisma.apiToken.findUnique({ where: { id: createdTokJson.tokenInfo.id } });
+  assert.ok(tokRow && !JSON.stringify(tokRow).includes(rawToken), "Only a hash of the token is stored");
+  const viaToken = await getActiveServerSession(bearerReq(rawToken));
+  assert.equal(viaToken?.userId, alexUser.id, "Bearer token authenticates as its creator");
+  assert.equal((await getActiveServerSession(bearerReq(rawToken.slice(0, -1) + (rawToken.endsWith("A") ? "B" : "A"))))?.userId, undefined, "Altered token rejected");
+  assert.equal((await apiTokensGet(bearerReq(rawToken))).status, 403, "A token can't manage tokens");
+  const listJson = await (await apiTokensGet(cookieReq(adminSess35.cookieValue))).json();
+  assert.ok(!JSON.stringify(listJson).includes(rawToken), "Token list never contains the token");
+  const revokeRes = await apiTokensDelete(cookieReq(adminSess35.cookieValue, { url: `http://127.0.0.1:3000/api/api-tokens?id=${createdTokJson.tokenInfo.id}` }));
+  assert.equal(revokeRes.status, 200);
+  assert.equal(await getActiveServerSession(bearerReq(rawToken)), null, "Revoked token stops working");
+
+  // Self-billed invoice PDF from real payout data
+  const payout35 = await prisma.payout.findFirst({ where: { rewards: { some: {} } }, include: { rewards: true } });
+  assert.ok(payout35, "A payout with linked rewards exists");
+  const acct35Row = await prisma.appSetting.findUnique({ where: { key: "account_settings" } });
+  const acct35Saved = acct35Row?.valueJson || "{}";
+  const setSelfInvoicing = async (on: boolean) =>
+    prisma.appSetting.update({
+      where: { key: "account_settings" },
+      data: { valueJson: JSON.stringify({ ...JSON.parse(acct35Saved), selfInvoicingEnabled: on, legalEntityName: "Test Co Pte Ltd" }) },
+    });
+  try {
+    await setSelfInvoicing(false);
+    const offRes = await payoutInvoiceGet(cookieReq(adminSess35.cookieValue), { params: { id: payout35!.id } });
+    assert.equal(offRes.status, 409, "No invoice when self-invoicing is off");
+    await setSelfInvoicing(true);
+    const pdfRes = await payoutInvoiceGet(cookieReq(adminSess35.cookieValue), { params: { id: payout35!.id } });
+    assert.equal(pdfRes.status, 200);
+    assert.equal(pdfRes.headers.get("content-type"), "application/pdf");
+    const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
+    assert.equal(pdfBytes.subarray(0, 5).toString(), "%PDF-", "Response is a real PDF");
+    assert.ok(pdfBytes.length > 1500, "PDF has content");
+    const outsider = await prisma.user.findFirst({ where: { identityType: "partner", NOT: { partnerName: payout35!.partnerName } } });
+    if (outsider) {
+      const outsiderSess = await createServerSessionRow({ userId: outsider.id, identityType: "partner", ttlMs: 600000 });
+      const outsiderRes = await payoutInvoiceGet(cookieReq(outsiderSess.cookieValue), { params: { id: payout35!.id } });
+      assert.equal(outsiderRes.status, 404, "Partners can't download another partner's invoice");
+      await revokeServerSessionById(outsiderSess.sessionRowId);
+    }
+  } finally {
+    await prisma.appSetting.update({ where: { key: "account_settings" }, data: { valueJson: acct35Saved } });
+  }
+
+  // Password change: wrong current refused; success signs out other sessions and the new password works
+  const pwEmail = `pw.fixture.${Date.now()}@r-prm.example.com`;
+  const pwUser = await prisma.user.create({
+    data: { email: pwEmail, name: "PW Fixture", identityType: "coworker", role: "Member", passwordHash: hashPasswordWithRandomSalt("Old-Password-123!"), status: "Active", isTestAccount: true },
+  });
+  try {
+    const pwSessA = await createServerSessionRow({ userId: pwUser.id, identityType: "coworker", ttlMs: 600000 });
+    const pwSessB = await createServerSessionRow({ userId: pwUser.id, identityType: "coworker", ttlMs: 600000 });
+    const wrongPw = await authPost(cookieReq(pwSessA.cookieValue, { url: "http://127.0.0.1:3000/api/auth", body: { action: "change_password", currentPassword: "nope", newPassword: "New-Password-456!" } }));
+    assert.equal(wrongPw.status, 400, "Wrong current password refused");
+    const shortPw = await authPost(cookieReq(pwSessA.cookieValue, { url: "http://127.0.0.1:3000/api/auth", body: { action: "change_password", currentPassword: "Old-Password-123!", newPassword: "short" } }));
+    assert.equal(shortPw.status, 400, "Short password refused");
+    const okPw = await authPost(cookieReq(pwSessA.cookieValue, { url: "http://127.0.0.1:3000/api/auth", body: { action: "change_password", currentPassword: "Old-Password-123!", newPassword: "New-Password-456!" } }));
+    assert.equal(okPw.status, 200, "Password changed");
+    const pwAfter = await prisma.user.findUnique({ where: { id: pwUser.id } });
+    assert.equal(verifyPasswordWithStoredSalt("New-Password-456!", pwAfter!.passwordHash), true, "New password works");
+    assert.equal(verifyPasswordWithStoredSalt("Old-Password-123!", pwAfter!.passwordHash), false, "Old password no longer works");
+    const sessB = await prisma.session.findUnique({ where: { id: pwSessB.sessionRowId } });
+    const sessA = await prisma.session.findUnique({ where: { id: pwSessA.sessionRowId } });
+    assert.ok(sessB?.revokedAt, "Other sessions signed out");
+    assert.equal(sessA?.revokedAt, null, "Current session kept");
+  } finally {
+    await prisma.session.deleteMany({ where: { userId: pwUser.id } });
+    await prisma.user.delete({ where: { id: pwUser.id } });
+  }
+
+  // Program rename keeps partner copies of the name in sync
+  const renameProg = await prisma.program.findFirst({ where: { partners: { some: {} } } });
+  assert.ok(renameProg, "A program with partners exists");
+  const renamed = `${renameProg!.name} (renamed)`;
+  const renameRes = await executeResourceMutation(mockAdminSession, "UPDATE_PROGRAM", { id: renameProg!.id, data: { name: renamed } });
+  assert.equal(renameRes.status, 200);
+  const staleCopies = await prisma.partner.count({ where: { programId: renameProg!.id, NOT: { programName: renamed } } });
+  assert.equal(staleCopies, 0, "Partners show the new program name");
+  const emptyRename = await executeResourceMutation(mockAdminSession, "UPDATE_PROGRAM", { id: renameProg!.id, data: { name: "  " } });
+  assert.equal(emptyRename.status, 400, "Empty program name refused");
+  await executeResourceMutation(mockAdminSession, "UPDATE_PROGRAM", { id: renameProg!.id, data: { name: renameProg!.name } });
+  await revokeServerSessionById(adminSess35.sessionRowId);
+  console.log(
+    "✓ Fixture 35 passed (§3.6): real list date/filters/paging/saved views, API tokens (hashed, bearer auth, revoke), self-billed invoice PDF, password change, program rename"
+  );
+
+  console.log("\nALL 35 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
   await prisma.$disconnect();
 }
 

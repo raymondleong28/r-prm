@@ -57,6 +57,8 @@ export default function ProgramDetailPage() {
   const [activeTab, setActiveTab] =
     useState<(typeof PROGRAM_TABS)[number]>("Levels");
   const [selectedLevelIdx, setSelectedLevelIdx] = useState(0);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const [newLink, setNewLink] = useState({ name: "", targetUrl: "" });
 
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
@@ -330,7 +332,39 @@ export default function ProgramDetailPage() {
         <div className="space-y-1">
           <BackBreadcrumb href="/programs/views/all" label="Programs" />
           <div className="flex items-center space-x-3 pt-1">
-            <h1 className="text-xl font-bold text-slate-900">{program.name}</h1>
+            {renaming ? (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const res = await mutate(
+                    "UPDATE_PROGRAM",
+                    { id: program.id, data: { name: renameValue } },
+                    `Program renamed to "${renameValue.trim()}"`
+                  );
+                  if (res) setRenaming(false);
+                }}
+              >
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  className="px-2.5 py-1 border border-slate-300 rounded-lg text-base font-bold"
+                />
+                <button type="submit" className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-semibold">
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRenaming(false)}
+                  className="px-3 py-1 rounded-lg border border-slate-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <h1 className="text-xl font-bold text-slate-900">{program.name}</h1>
+            )}
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
               {levels.length} Tier Levels
             </span>
@@ -361,7 +395,10 @@ export default function ProgramDetailPage() {
             <span>Duplicate</span>
           </button>
           <button
-            onClick={() => showToast("Program configuration saved")}
+            onClick={() => {
+              setRenameValue(program.name);
+              setRenaming(true);
+            }}
             className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
           >
             Rename

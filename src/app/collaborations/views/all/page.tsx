@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { X } from "lucide-react";
 
 export default function CollaborationsListPage() {
@@ -32,7 +33,7 @@ export default function CollaborationsListPage() {
     setModalOpen(true);
   };
 
-  const filtered = collaborations.filter((c) => {
+  const viewRows = collaborations.filter((c) => {
     if (activeView === "New Collaborations" && c.status !== "New") return false;
     if (activeView === "Accepted" && c.status !== "Accepted") return false;
     if (activeView === "Closed" && c.status !== "Closed") return false;
@@ -46,6 +47,11 @@ export default function CollaborationsListPage() {
     }
     return true;
   });
+  const list = useListControls("collaborations", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,9 +66,10 @@ export default function CollaborationsListPage() {
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Collaborations"
-        countLabel={`${filtered.length} collaborations`}
+        countLabel={`${list.filteredCount} collaborations`}
         views={["All", "New Collaborations", "Accepted", "Closed"]}
         activeView={activeView}
         onSelectView={setActiveView}

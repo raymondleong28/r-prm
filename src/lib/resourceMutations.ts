@@ -1439,10 +1439,23 @@ export async function executeResourceMutation(
     }
 
     case "UPDATE_PROGRAM": {
+      if (payload?.data && "name" in payload.data) {
+        const newName = String(payload.data.name || "").trim();
+        if (!newName) {
+          return NextResponse.json({ error: "Program name can't be empty." }, { status: 400 });
+        }
+        payload.data.name = newName;
+      }
+      const before = await prisma.program.findUnique({ where: { id: payload.id } });
       const prog = await prisma.program.update({
         where: { id: payload.id },
         data: payload.data,
       });
+      if (payload?.data?.name && before && before.name !== prog.name) {
+        // Partner and deal records keep a copy of the program name for lists and filters
+        await prisma.partner.updateMany({ where: { programId: prog.id }, data: { programName: prog.name } });
+        await prisma.deal.updateMany({ where: { programName: before.name }, data: { programName: prog.name } });
+      }
       await writeAudit({
         session,
         action: "UPDATE",

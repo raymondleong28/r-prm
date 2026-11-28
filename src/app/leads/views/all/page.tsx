@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
+import { useListControls } from "@/components/useListControls";
 import { LeadConvertModal } from "@/components/LeadConvertModal";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
 
@@ -17,7 +18,7 @@ export default function LeadsListPage() {
   const baseCurrency =
     settings?.account_settings?.mainCurrency || SUPPORTED_CURRENCIES[0];
 
-  const filtered = leads.filter((l) => {
+  const viewRows = leads.filter((l) => {
     // §3.5.1: Filter on the signed-in user's id
     if (activeView === "My Leads" && l.ownerId !== session?.userId) {
       return false;
@@ -33,13 +34,19 @@ export default function LeadsListPage() {
     }
     return true;
   });
+  const list = useListControls("leads", viewRows, {
+    dateField: "createdAt",
+    dateLabel: "Creation date",
+  });
+  const filtered = list.pageRows;
 
   return (
     <div>
       <EntityListToolbar
-        exportRows={filtered}
+        exportRows={list.filteredRows}
+        controls={list}
         title="Leads"
-        countLabel={`${filtered.length} leads`}
+        countLabel={`${list.filteredCount} leads`}
         views={["All", "My Leads", "Pending Leads"]}
         activeView={activeView}
         onSelectView={setActiveView}
