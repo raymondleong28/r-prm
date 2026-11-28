@@ -30,18 +30,6 @@ const ACCOUNT_CATEGORIES = [
   { id: "audit-log", label: "Audit trail" },
 ] as const;
 
-const PROPERTY_OBJECTS = [
-  "Contacts",
-  "Customers",
-  "Deals",
-  "Leads",
-  "Partners",
-  "Rewards",
-  "Payouts",
-  "Tasks",
-  "Transactions",
-  "Products",
-];
 
 export default function AccountRootPage() {
   const params = useParams();
@@ -49,9 +37,6 @@ export default function AccountRootPage() {
   const { settings, manageItems, session, auditLogs, partners, mutate, refresh, showToast } =
     usePrm();
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [propObject, setPropObject] = useState("Leads");
-  const [newPropName, setNewPropName] = useState("");
-  const [newPropType, setNewPropType] = useState("Single line text");
   const [resetConfirmationText, setResetConfirmationText] = useState("");
 
   const acct = settings.account_settings || {};
@@ -213,9 +198,6 @@ export default function AccountRootPage() {
     if (s.billingAddress !== undefined) setBillingAddress(s.billingAddress);
   }, [settings.account_settings]);
 
-  const customProps = manageItems.filter(
-    (m) => m.category === "custom_properties"
-  );
   const emailTemplates = manageItems.filter(
     (m) => m.category === "email_templates"
   );
@@ -260,23 +242,6 @@ export default function AccountRootPage() {
       },
       msg
     );
-  };
-
-  const handleAddProperty = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPropName) return;
-    await mutate(
-      "CREATE_MANAGE_ITEM",
-      {
-        category: "custom_properties",
-        name: newPropName,
-        subtitle: `Object: ${propObject} · Type: ${newPropType} · Active in Forms, Detail Views & Columns`,
-        status: "Active",
-        metadata: { objectType: propObject, fieldType: newPropType },
-      },
-      `Custom property "${newPropName}" added to ${propObject}!`
-    );
-    setNewPropName("");
   };
 
   const currentOrigin =
@@ -1018,15 +983,6 @@ export default function AccountRootPage() {
 
           <AccountSystemTabs
             activeTab={activeTab}
-            propertyObjects={PROPERTY_OBJECTS}
-            propObject={propObject}
-            setPropObject={setPropObject}
-            newPropName={newPropName}
-            setNewPropName={setNewPropName}
-            newPropType={newPropType}
-            setNewPropType={setNewPropType}
-            handleAddProperty={handleAddProperty}
-            customProps={customProps}
             resetConfirmationText={resetConfirmationText}
             setResetConfirmationText={setResetConfirmationText}
             showToast={showToast}

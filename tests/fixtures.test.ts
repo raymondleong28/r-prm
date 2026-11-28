@@ -79,6 +79,7 @@ import {
 import { readProspectionSettings } from "../src/lib/prospectionSettings";
 import { evaluateRuleForInvoice, sortableMonthKey, monthsBetween, evaluateRuleAmount, type RewardEvent } from "../src/lib/rewardRules";
 import { toEditableRule, describeRule, validateRule } from "../src/lib/ruleEditing";
+import { checkCustomValues, checkDefinition, keyFromLabel, definitionsFromItems, type CustomFieldDefinition } from "../src/lib/customFieldDefs";
 import { generateRewardsForTransaction } from "../src/lib/rewardGeneration";
 import { escapeCsvCell, rowsToCsv } from "../src/lib/csvExport";
 import {
@@ -2320,7 +2321,155 @@ async function runFixtures() {
   assert.deepEqual(validateRule(toEditableRule(DEFAULT_COMMISSION_TEMPLATES.referral_entry, "SGD")), [], "Agreed-rate rule may have 0% (it uses the agreed rate)");
   console.log(`✓ Fixture 37 passed (§3.6 R3): ${rules37.length} rules × ${events37.length} events (${compared37} checks) pay the same after editing; summaries and save checks correct`);
 
-  console.log("\nALL 37 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
+  // Fixture 38 (§3.6 R2b): custom fields — checked definitions and values, stored on records, audited,
+  // admin-only, and usable in reward rules (conditions and "% of field"); partners can't edit admin fields
+  assert.equal(keyFromLabel("Billing Period (months)"), "billing_period_months");
+  const defs38: CustomFieldDefinition[] = [
+    { id: "d1", key: "plan_type", label: "Plan type", objectType: "Transactions", fieldType: "select", options: ["Monthly", "Quarterly"], archived: false },
+    { id: "d2", key: "setup_fee", label: "Setup fee", objectType: "Transactions", fieldType: "number", options: [], archived: false },
+    { id: "d3", key: "renewal", label: "Renewal", objectType: "Transactions", fieldType: "checkbox", options: [], archived: false },
+    { id: "d4", key: "billing_contact", label: "Billing contact", objectType: "Transactions", fieldType: "email", options: [], archived: false },
+    { id: "d5", key: "go_live", label: "Go-live", objectType: "Transactions", fieldType: "date", options: [], archived: false },
+    { id: "d6", key: "old_code", label: "Old code", objectType: "Transactions", fieldType: "text", options: [], archived: true },
+  ];
+  const good38 = checkCustomValues(defs38, { plan_type: "monthly", setup_fee: "1,250.50", renewal: "yes", billing_contact: "Ops@Example.com", go_live: "2026-02-28" });
+  assert.ok(good38.ok);
+  if (good38.ok) assert.deepEqual(good38.values, { plan_type: "Monthly", setup_fee: 1250.5, renewal: true, billing_contact: "ops@example.com", go_live: "2026-02-28" }, "Values are cleaned to their type");
+  const bad38 = checkCustomValues(defs38, { plan_type: "Weekly", setup_fee: "abc", renewal: "maybe", billing_contact: "nope", go_live: "2026-02-30", old_code: "x", nonsense: 1 });
+  assert.ok(!bad38.ok && bad38.errors.length === 7, "Every bad value, unknown field and archived field is refused");
+  const cleared38 = checkCustomValues(defs38, { setup_fee: "" }, { setup_fee: 10, plan_type: "Monthly" });
+  assert.ok(cleared38.ok && !("setup_fee" in cleared38.values) && cleared38.values.plan_type === "Monthly", "Empty removes one value, keeps the rest");
+  assert.ok(!checkDefinition({ label: "Plan type", objectType: "Transactions", fieldType: "text" }, defs38).ok, "Duplicate name on the same record type refused");
+  assert.ok(checkDefinition({ label: "Plan type", objectType: "Customers", fieldType: "text" }, defs38).ok, "Same name on another record type is fine");
+  assert.ok(!checkDefinition({ label: "Tier", objectType: "Customers", fieldType: "select", options: "" }, defs38).ok, "Single select needs options");
+  const edit38 = checkDefinition({ label: "Plan kind", fieldType: "number", objectType: "Leads", options: "Monthly, Quarterly, Yearly" }, defs38, defs38[0]);
+  assert.ok(edit38.ok && edit38.key === "plan_type" && edit38.fieldType === "select" && edit38.objectType === "Transactions", "Key, type and record type can't change on edit");
+
+  const stamp38 = Date.now();
+  const partnerSess38 = {
+    sessionId: "p38", userId: "p38", identityType: "partner" as const, role: "Manager", name: "P", email: "p@example.com",
+    partnerId: null as string | null, issuedAt: Date.now(), expiresAt: Date.now() + 86400000,
+  };
+  const deniedDef = await executeResourceMutation(partnerSess38, "SAVE_CUSTOM_FIELD_DEFINITION", { label: "X", objectType: "Leads", fieldType: "text" });
+  assert.equal(deniedDef.status, 403, "Partners can't define custom fields");
+  const mkDef = async (label: string, objectType: string, fieldType: string, options = "") => {
+    const r = await executeResourceMutation(mockAdminSession, "SAVE_CUSTOM_FIELD_DEFINITION", { label: `${label} ${stamp38}`, objectType, fieldType, options });
+    assert.equal(r.status, 200, `Defined ${label}`);
+    return (await r.json()).definition as CustomFieldDefinition;
+  };
+  const regionDef = await mkDef("Region", "Customers", "select", "Asia, Europe");
+  const planDef = await mkDef("Plan type", "Transactions", "select", "Monthly\nQuarterly");
+  const feeDef = await mkDef("Setup fee", "Transactions", "number");
+  const dupDef = await executeResourceMutation(mockAdminSession, "SAVE_CUSTOM_FIELD_DEFINITION", { label: `Region ${stamp38}`, objectType: "Customers", fieldType: "text" });
+  assert.equal(dupDef.status, 400, "Duplicate field refused by the server");
+  assert.equal(
+    definitionsFromItems(await prisma.manageItem.findMany({ where: { category: "custom_properties" } }), "Customers").filter((d) => d.key === regionDef.key).length,
+    1
+  );
+
+  // Create with custom values; a bad value stops the create entirely
+  const custCount0 = await prisma.customer.count();
+  const badCreate = await executeResourceMutation(mockAdminSession, "CREATE_CUSTOMER", {
+    name: `CF Bad ${stamp38}`, email: `bad.${stamp38}@example.com`, sourcePartnerName: "x", customFields: { [regionDef.key]: "Mars" },
+  });
+  assert.equal(badCreate.status, 400, "Invalid custom value refused");
+  assert.equal(await prisma.customer.count(), custCount0, "Nothing created when a custom value is invalid");
+  const partnerCreate = await executeResourceMutation({ ...partnerSess38, partnerId: "x" }, "CREATE_LEAD", { firstName: "A", lastName: "B", company: "C", email: "a@b.co", customFields: { anything: 1 } });
+  assert.equal(partnerCreate.status, 403, "Partners can't set custom fields when submitting");
+
+  const cfProg = await prisma.program.create({
+    data: {
+      name: `Custom Field Program ${stamp38}`, onboardingPipelineId: "Default Onboarding", autoEmailsJson: "{}", permissionsJson: "{}",
+      levelsJson: JSON.stringify([{ name: "CF Level", benefits: [], requirements: [], rewards: [{
+        id: `r38-${stamp38}`, title: "10% of setup fee, Asia monthly", trigger: "transaction_added_customer",
+        conditions: [
+          { type: "customer_property", field: `custom.${regionDef.key}`, operator: "is", value: "Asia" },
+          { type: "transaction_property", field: `custom.${planDef.key}`, operator: "is", value: "Monthly" },
+        ],
+        valueType: "Cash", amountMode: "percentage", rateOrAmount: 10, percentOfField: `custom.${feeDef.key}`, requiresValidation: true, clawbackOnRefund: true,
+      }] }]),
+    },
+  });
+  const cfPartnerName = `Custom Field Partner ${stamp38}`;
+  assert.equal((await executeResourceMutation(mockAdminSession, "CREATE_PARTNER", { name: cfPartnerName, programId: cfProg.id, qualifyingLevel: "CF Level" })).status, 200);
+  const mkCust = async (name: string, region: string) => {
+    const r = await executeResourceMutation(mockAdminSession, "CREATE_CUSTOMER", {
+      name: `${name} ${stamp38}`, email: `${name.toLowerCase()}.${stamp38}@example.com`, sourcePartnerName: cfPartnerName, customFields: { [regionDef.key]: region },
+    });
+    assert.equal(r.status, 200);
+    return (await r.json()).customer;
+  };
+  const asiaCust = await mkCust("Asia", "asia");
+  assert.deepEqual(JSON.parse(asiaCust.customFieldsJson), { [regionDef.key]: "Asia" }, "Custom value stored on the record");
+  const europeCust = await mkCust("Europe", "Europe");
+  const tx38 = async (label: string, customerId: string, plan: string, fee: number) => {
+    const r = await executeResourceMutation(mockAdminSession, "CREATE_TRANSACTION", {
+      name: `CF-${stamp38}-${label}`, amount: 1000, currency: "SGD", partnerName: cfPartnerName, customerId, monthKey: "03/2026",
+      customFields: { [planDef.key]: plan, [feeDef.key]: fee },
+    });
+    assert.equal(r.status, 200, `Transaction ${label}`);
+    return prisma.reward.findMany({ where: { fromActivity: `CF-${stamp38}-${label}` } });
+  };
+  const paid38 = await tx38("A", asiaCust.id, "Monthly", 400);
+  assert.deepEqual(paid38.map((r) => [r.fromRewardRule, toMajorUnits(r.amount)]), [["10% of setup fee, Asia monthly", 40]], "Rule reads custom fields: 10% of setup fee 400 = 40");
+  assert.equal((await tx38("B", asiaCust.id, "Quarterly", 400)).length, 0, "Transaction custom condition not met → no reward");
+  assert.equal((await tx38("C", europeCust.id, "Monthly", 400)).length, 0, "Customer custom condition not met → no reward");
+
+  // Edit values on a record: checked, saved, audited; partners refused
+  const upd38 = await executeResourceMutation(mockAdminSession, "UPDATE_CUSTOM_FIELDS", { objectType: "Customers", id: europeCust.id, values: { [regionDef.key]: "Asia" } });
+  assert.equal(upd38.status, 200);
+  assert.deepEqual(JSON.parse((await prisma.customer.findUnique({ where: { id: europeCust.id } }))!.customFieldsJson), { [regionDef.key]: "Asia" });
+  const audit38 = await prisma.auditLog.findFirst({ where: { objectId: europeCust.id, summary: { contains: "custom fields" } }, orderBy: { createdAt: "desc" } });
+  assert.ok(audit38 && JSON.parse(audit38.diffJson)[regionDef.key].from === "Europe", "Change audited with before and after");
+  assert.equal((await tx38("D", europeCust.id, "Monthly", 100)).length, 1, "Rules see the updated value");
+  assert.equal((await executeResourceMutation(mockAdminSession, "UPDATE_CUSTOM_FIELDS", { objectType: "Customers", id: europeCust.id, values: { nope: 1 } })).status, 400);
+  assert.equal((await executeResourceMutation({ ...partnerSess38, partnerId: "x" }, "UPDATE_CUSTOM_FIELDS", { objectType: "Customers", id: europeCust.id, values: {} })).status, 403);
+
+  // Options in use can't be removed; archiving keeps values and blocks edits
+  const rmOpt = await executeResourceMutation(mockAdminSession, "SAVE_CUSTOM_FIELD_DEFINITION", { id: regionDef.id, label: regionDef.label, options: "Europe" });
+  assert.equal(rmOpt.status, 409, "Can't remove an option records still use");
+  const addOpt = await executeResourceMutation(mockAdminSession, "SAVE_CUSTOM_FIELD_DEFINITION", { id: regionDef.id, label: `Sales region ${stamp38}`, options: "Asia, Europe, Americas" });
+  assert.equal(addOpt.status, 200, "Rename and add an option");
+  assert.equal((await addOpt.json()).definition.key, regionDef.key, "Key stays the same after renaming");
+  assert.equal((await executeResourceMutation(mockAdminSession, "SET_CUSTOM_FIELD_ARCHIVED", { id: feeDef.id, archived: true })).status, 200);
+  const txA = await prisma.transaction.findFirst({ where: { name: `CF-${stamp38}-A` } });
+  assert.equal(
+    (await executeResourceMutation(mockAdminSession, "UPDATE_CUSTOM_FIELDS", { objectType: "Transactions", id: txA!.id, values: { [feeDef.key]: 5 } })).status,
+    400,
+    "Archived field can't be changed"
+  );
+  assert.equal(JSON.parse((await prisma.transaction.findUnique({ where: { id: txA!.id } }))!.customFieldsJson)[feeDef.key], 400, "Archiving keeps stored values");
+
+  // CSV export uses the field's name as the column header
+  assert.equal(rowsToCsv([{ name: "x", [`custom.${planDef.key}`]: "Monthly" }], undefined, { [`custom.${planDef.key}`]: "Plan type" }).split("\r\n")[0], "name,Plan type");
+
+  // Partners: only their own bank details, only as manager; never program, level or status
+  const apexP = await prisma.partner.findFirst({ where: { name: "Apex Cloud Solutions Pte Ltd" } });
+  assert.ok(apexP, "Demo partner present");
+  const lvlBefore = apexP!.qualifyingLevel;
+  const raise = await executeResourceMutation({ ...partnerSess38, partnerId: apexP!.id }, "UPDATE_PARTNER", { data: { qualifyingLevel: "Anything", status: "Active" } });
+  assert.equal(raise.status, 403, "Partner can't change its own level or status");
+  assert.equal((await prisma.partner.findUnique({ where: { id: apexP!.id } }))!.qualifyingLevel, lvlBefore, "Level unchanged");
+  const rep = await executeResourceMutation({ ...partnerSess38, partnerId: apexP!.id, role: "Sales Rep" }, "UPDATE_PARTNER", { data: { bankDetailsJson: "{}" } });
+  assert.equal(rep.status, 403, "Only the partner manager can change bank details");
+
+  // Products keep their values in the product's settings
+  const prodDef = await mkDef("Warranty years", "Products", "number");
+  const product38 = await prisma.manageItem.create({ data: { category: "products", name: `CF Product ${stamp38}`, metadataJson: JSON.stringify({ sku: "SKU-38" }) } });
+  assert.equal((await executeResourceMutation(mockAdminSession, "UPDATE_CUSTOM_FIELDS", { objectType: "Products", id: product38.id, values: { [prodDef.key]: "3" } })).status, 200);
+  assert.deepEqual(JSON.parse((await prisma.manageItem.findUnique({ where: { id: product38.id } }))!.metadataJson), { sku: "SKU-38", customFields: { [prodDef.key]: 3 } }, "Product value saved next to its other settings");
+  await prisma.manageItem.deleteMany({ where: { id: { in: [product38.id, prodDef.id] } } });
+
+  // Clean up
+  await prisma.reward.deleteMany({ where: { partnerName: cfPartnerName } });
+  await prisma.transaction.deleteMany({ where: { partnerName: cfPartnerName } });
+  await prisma.customer.deleteMany({ where: { id: { in: [asiaCust.id, europeCust.id] } } });
+  await prisma.partner.deleteMany({ where: { name: cfPartnerName } });
+  await prisma.program.delete({ where: { id: cfProg.id } });
+  await prisma.manageItem.deleteMany({ where: { id: { in: [regionDef.id, planDef.id, feeDef.id] } } });
+  console.log("✓ Fixture 38 passed (§3.6 R2b): custom field definitions and values checked, stored, audited and admin-only; reward rules use custom fields in conditions and % of field; partners can't raise their own level");
+
+  console.log("\nALL 38 KNOWN-ANSWER & GO-LIVE READINESS FIXTURES PASSED GREEN!");
   await prisma.$disconnect();
 }
 

@@ -4,6 +4,7 @@
 import { normalizeRewardRule, type StructuredRewardRule } from "./prmEngine";
 import { FILTER_OPERATORS, humaniseField } from "./listControls";
 import { normaliseTrigger, REWARD_TRIGGERS, type RuleCondition } from "./rewardRules";
+import { CUSTOM_PREFIX, type CustomFieldDefinition } from "./customFieldDefs";
 
 export const TRANSACTION_RULE_TRIGGERS = new Set(["transaction_added_customer", "transaction_added_deal", "new_transaction"]);
 
@@ -12,6 +13,21 @@ export const AGREED_IN_WRITING = { field: "agreedBeforeAcceptance", operator: "=
 export const CUSTOMER_FIELDS = ["billingFrequency", "billingPeriod", "subscriptionPlan", "status", "source", "name", "email"];
 export const TRANSACTION_FIELDS = ["name", "amount", "currency", "dealName", "customerName", "monthKey"];
 export const NUMBER_FIELDS = ["amount"];
+
+/** Built-in plus custom fields offered in rule conditions and "% of", with their labels. */
+export function ruleFieldChoices(defs: CustomFieldDefinition[]) {
+  const live = defs.filter((d) => !d.archived);
+  const custom = (obj: string, types?: string[]) =>
+    live.filter((d) => d.objectType === obj && (!types || types.includes(d.fieldType))).map((d) => `${CUSTOM_PREFIX}${d.key}`);
+  const labels: FieldLabels = {};
+  for (const d of defs) labels[`${CUSTOM_PREFIX}${d.key}`] = d.label;
+  return {
+    transactionFields: [...TRANSACTION_FIELDS, ...custom("Transactions")],
+    customerFields: [...CUSTOMER_FIELDS, ...custom("Customers")],
+    numberFields: [...NUMBER_FIELDS, ...custom("Transactions", ["number"])],
+    labels,
+  };
+}
 
 /** An older field condition the builder can't edit; kept exactly as stored so amounts don't change. */
 export type LegacyCondition = { field: string; operator: string; value: unknown; valueTo?: number };
@@ -71,11 +87,17 @@ function opLabel(op: string): string {
   return FILTER_OPERATORS.find((o) => o.id === op)?.label || op;
 }
 
-export function describeCondition(c: EditorCondition): string {
+export type FieldLabels = Record<string, string>;
+
+function fieldName(field: string, labels: FieldLabels): string {
+  return (labels[field] || humaniseField(field.replace(/^custom\./, ""))).toLowerCase();
+}
+
+export function describeCondition(c: EditorCondition, labels: FieldLabels = {}): string {
   if (isAgreedInWriting(c)) return "if a rate was agreed in writing before the order was accepted";
   if (isLegacyCondition(c)) {
     const range = c.operator === "between" ? `between ${c.value} and ${c.valueTo}` : `${c.operator} ${String(c.value)}`;
-    return `if ${humaniseField(c.field).toLowerCase()} ${range}`;
+    return `if ${fieldName(c.field, labels)} ${range}`;
   }
   const rc = c as RuleCondition;
   switch (rc.type) {
@@ -92,26 +114,26 @@ export function describeCondition(c: EditorCondition): string {
     case "transaction_sum":
       return `when the customer's transactions total ${rc.operator === "gte" ? "at least" : "at most"} ${rc.value.toLocaleString()}`;
     case "transaction_property":
-      return `if the transaction's ${humaniseField(rc.field).toLowerCase()} ${opLabel(rc.operator)}${rc.value !== "" ? ` "${rc.value}"` : ""}`;
+      return `if the transaction's ${fieldName(rc.field, labels)} ${opLabel(rc.operator)}${rc.value !== "" ? ` "${rc.value}"` : ""}`;
     case "customer_property":
-      return `if the customer's ${humaniseField(rc.field).toLowerCase()} ${opLabel(rc.operator)}${rc.value !== "" ? ` "${rc.value}"` : ""}`;
+      return `if the customer's ${fieldName(rc.field, labels)} ${opLabel(rc.operator)}${rc.value !== "" ? ` "${rc.value}"` : ""}`;
     default:
       return "";
   }
 }
 
 /** One-sentence summary, e.g. "20% of amount for every transaction added on a customer, from month 4 to month 15". */
-export function describeRule(rule: StructuredRewardRule, baseCurrency = ""): string {
+export function describeRule(rule: StructuredRewardRule, baseCurrency = "", labels: FieldLabels = {}): string {
   const trigger = normaliseTrigger(rule.trigger);
   const triggerLabel = (REWARD_TRIGGERS.find((t) => t.id === trigger)?.label || "event").toLowerCase();
   let amount: string;
   if (rule.amountMode === "fixed") amount = `${rule.currency || baseCurrency} ${rule.rateOrAmount.toLocaleString()}`;
   else if (rule.amountMode === "one_month_subscription") amount = "one month's subscription fee";
   else if (rule.rateSteps && rule.rateSteps.length > 0)
-    amount = rule.rateSteps.map((s) => `${s.ratePct}% (months ${s.fromMonth}–${s.toMonth})`).join(" then ") + ` of ${humaniseField(rule.percentOfField || "amount").toLowerCase()}`;
+    amount = rule.rateSteps.map((s) => `${s.ratePct}% (months ${s.fromMonth}–${s.toMonth})`).join(" then ") + ` of ${fieldName(rule.percentOfField || "amount", labels)}`;
   else if (rule.rateOrAmount === 0 && (rule.conditions || []).some(isAgreedInWriting)) amount = "the agreed rate";
-  else amount = `${rule.rateOrAmount}% of ${humaniseField(rule.percentOfField || "amount").toLowerCase()}`;
-  const conds = (rule.conditions || []).map((c) => describeCondition(c as EditorCondition)).filter(Boolean);
+  else amount = `${rule.rateOrAmount}% of ${fieldName(rule.percentOfField || "amount", labels)}`;
+  const conds = (rule.conditions || []).map((c) => describeCondition(c as EditorCondition, labels)).filter(Boolean);
   const every = TRANSACTION_RULE_TRIGGERS.has(trigger) ? "every" : "each";
   return `${amount} for ${every} ${triggerLabel.replace(/^new /, "new ")}${conds.length ? ", " + conds.join(", ") : ""}.`;
 }

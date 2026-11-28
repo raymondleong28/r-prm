@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { CustomFieldsPanel } from "@/components/CustomFields";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
@@ -159,6 +160,7 @@ export default function TransactionDetailPage() {
           )}
         </div>
       </div>
+      <CustomFieldsPanel objectType="Transactions" recordId={tx.id} stored={tx.customFieldsJson} />
     </div>
   );
 }

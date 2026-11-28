@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { customFieldsPayload, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { usePrm } from "@/context/PrmContext";
@@ -140,6 +141,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   const closeMenus = () => setOpenMenu(null);
+  // Custom field values typed into the add partner / lead / deal forms; cleared whenever a form opens or closes
+  const [customDraft, setCustomDraft] = useState<CustomFieldDraft>({});
+  useEffect(() => {
+    setCustomDraft({});
+  }, [globalModal]);
 
   const handleCreatePartner = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,16 +155,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       showToast("Create a partner program first before enrolling a partner.");
       return;
     }
-    await mutate(
+    const res = await mutate(
       "CREATE_PARTNER",
       {
         ...partnerForm,
         programId: prog.id,
         programName: prog.name,
         currency: baseCurrency,
+        customFields: customFieldsPayload(customDraft),
       },
       `Partner "${partnerForm.name}" created!`
     );
+    if (!res?.ok) return;
     setGlobalModal(null);
     setPartnerForm({
       name: "",
@@ -183,17 +191,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
     const isShared = globalModal === "share_lead";
-    await mutate(
+    const res = await mutate(
       "CREATE_LEAD",
       {
         ...leadForm,
         sourcePartnerName: resolvedPartnerName,
         source: isShared ? "Shared" : "Partner Portal",
+        customFields: customFieldsPayload(customDraft),
       },
       isShared
         ? `Lead "${leadForm.firstName} ${leadForm.lastName}" shared with ${resolvedPartnerName}`
         : `Lead "${leadForm.firstName} ${leadForm.lastName}" submitted!`
     );
+    if (!res?.ok) return;
     setGlobalModal(null);
   };
 
@@ -209,15 +219,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       showToast("Add a partner first before registering a deal.");
       return;
     }
-    await mutate(
+    const res = await mutate(
       "CREATE_DEAL",
       {
         ...dealForm,
         partnerName: resolvedPartnerName,
         currency: dealForm.currency || baseCurrency,
+        customFields: customFieldsPayload(customDraft),
       },
       `Deal "${dealForm.name}" registered for ${resolvedPartnerName}!`
     );
+    if (!res?.ok) return;
     setDealStep(1);
     setGlobalModal(null);
   };
@@ -784,6 +796,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         dealForm={dealForm}
         setDealForm={setDealForm}
         handleCreateDeal={handleCreateDeal}
+        customDraft={customDraft}
+        setCustomDraft={setCustomDraft}
       />
     </div>
   );

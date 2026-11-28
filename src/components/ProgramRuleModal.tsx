@@ -9,11 +9,10 @@ import {
 } from "@/lib/prmEngine";
 import { REWARD_TRIGGERS, type RuleCondition } from "@/lib/rewardRules";
 import { FILTER_OPERATORS, humaniseField, type FilterOperator } from "@/lib/listControls";
+import type { CustomFieldDefinition } from "@/lib/customFieldDefs";
 import {
   AGREED_IN_WRITING,
-  CUSTOMER_FIELDS,
-  NUMBER_FIELDS,
-  TRANSACTION_FIELDS,
+  ruleFieldChoices,
   TRANSACTION_RULE_TRIGGERS,
   describeRule,
   describeCondition,
@@ -64,6 +63,7 @@ export function ProgramRuleModal({
   onSaveRule,
   onSaveAsTemplate,
   onDeleteTemplate,
+  customFieldDefs = [],
 }: {
   open: boolean;
   editingRuleId: string | null;
@@ -72,6 +72,7 @@ export function ProgramRuleModal({
   baseCurrency: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   commissionTemplateItems: any[];
+  customFieldDefs?: CustomFieldDefinition[];
   onClose: () => void;
   onSaveRule: (e: React.FormEvent) => Promise<void>;
   onSaveAsTemplate: (rule: StructuredRewardRule) => Promise<void>;
@@ -101,6 +102,8 @@ export function ProgramRuleModal({
       : Object.values(DEFAULT_COMMISSION_TEMPLATES).map((tpl) => ({ rule: toEditableRule(tpl, baseCurrency) }));
 
   const conditions = (ruleForm.conditions || []) as EditorCondition[];
+  const choices = ruleFieldChoices(customFieldDefs);
+  const labelOf = (f: string) => choices.labels[f] || humaniseField(f);
   const isTransactionTrigger = TRANSACTION_RULE_TRIGGERS.has(String(ruleForm.trigger));
   const everyTime = conditions.length === 0 && !wantConditions;
   const errors = validateRule(ruleForm);
@@ -256,7 +259,7 @@ export function ProgramRuleModal({
                   <div key={i} className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-slate-200">
                     {isLegacyCondition(c) && (
                       <span className="text-slate-700">
-                        Older condition: {describeCondition(c)} <span className="text-slate-400">(kept as saved; remove it to replace it)</span>
+                        Older condition: {describeCondition(c, choices.labels)} <span className="text-slate-400">(kept as saved; remove it to replace it)</span>
                       </span>
                     )}
                     {isAgreedInWriting(c) && (
@@ -296,9 +299,9 @@ export function ProgramRuleModal({
                         <span>If {rc.type === "transaction_property" ? "transaction" : "customer"}</span>
                         <select value={rc.field} onChange={(e) => updateCondition(i, { field: e.target.value })} className="px-2 py-1 border border-slate-300 rounded">
                           <option value="">Choose a field…</option>
-                          {(rc.type === "transaction_property" ? TRANSACTION_FIELDS : CUSTOMER_FIELDS).map((f) => (
+                          {(rc.type === "transaction_property" ? choices.transactionFields : choices.customerFields).map((f) => (
                             <option key={f} value={f}>
-                              {humaniseField(f)}
+                              {labelOf(f)}
                             </option>
                           ))}
                         </select>
@@ -386,9 +389,9 @@ export function ProgramRuleModal({
                     onChange={(e) => setRuleForm({ ...ruleForm, percentOfField: e.target.value })}
                     className="px-3 py-2 border border-slate-300 rounded-lg"
                   >
-                    {NUMBER_FIELDS.map((f) => (
+                    {choices.numberFields.map((f) => (
                       <option key={f} value={f}>
-                        {humaniseField(f)}
+                        {labelOf(f)}
                       </option>
                     ))}
                   </select>
@@ -460,7 +463,7 @@ export function ProgramRuleModal({
 
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
             <p className="text-[10px] font-bold uppercase text-emerald-800 mb-1">This reward pays</p>
-            <p className="text-emerald-950">{describeRule(ruleForm, baseCurrency)}</p>
+            <p className="text-emerald-950">{describeRule(ruleForm, baseCurrency, choices.labels)}</p>
           </div>
 
           {showErrors && errors.length > 0 && (

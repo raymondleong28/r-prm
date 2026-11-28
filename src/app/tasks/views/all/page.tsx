@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CreateFormCustomFields, customFieldsPayload, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
@@ -13,6 +14,7 @@ export default function TasksListPage() {
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [customDraft, setCustomDraft] = useState<CustomFieldDraft>({});
 
   const acct = settings?.account_settings || {};
   const coworkers = manageItems.filter((m) => m.category === "team");
@@ -86,7 +88,13 @@ export default function TasksListPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await mutate("CREATE_TASK", form, `Task "${form.name}" created!`);
+    const res = await mutate(
+      "CREATE_TASK",
+      { ...form, customFields: customFieldsPayload(customDraft) },
+      `Task "${form.name}" created!`
+    );
+    if (!res?.ok) return;
+    setCustomDraft({});
     setModalOpen(false);
   };
 
@@ -294,6 +302,9 @@ export default function TasksListPage() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
+            </div>
+            <div className="px-5 pb-4">
+              <CreateFormCustomFields objectType="Tasks" draft={customDraft} onChange={setCustomDraft} />
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button

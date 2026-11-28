@@ -2,6 +2,27 @@
 
 import React from "react";
 import { Check, ExternalLink, Upload, X } from "lucide-react";
+import { usePrm } from "@/context/PrmContext";
+import { CustomFieldsPanel, useCustomFieldDefs } from "@/components/CustomFields";
+
+/** Products keep custom values in metadataJson.customFields; they can be filled once the product exists. */
+function ProductCustomFields({ editingId }: { editingId: string | null }) {
+  const { manageItems } = usePrm();
+  const defs = useCustomFieldDefs("Products");
+  if (defs.length === 0) return null;
+  if (!editingId) {
+    return <p className="text-[11px] text-slate-500">Custom fields can be filled in after the product is created.</p>;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const item = (manageItems || []).find((m: any) => m.id === editingId);
+  let stored: unknown = {};
+  try {
+    stored = JSON.parse(item?.metadataJson || "{}").customFields || {};
+  } catch {
+    stored = {};
+  }
+  return <CustomFieldsPanel objectType="Products" recordId={editingId} stored={stored} />;
+}
 
 export interface ManageFormState {
   name: string;
@@ -427,6 +448,9 @@ export function ManageModals({
                     </select>
                   </div>
                 </div>
+              )}
+              {selectedTool === "products" && (
+                <ProductCustomFields editingId={editingId} />
               )}
 
               {/* TEAM (COWORKERS) FIELDS */}

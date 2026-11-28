@@ -69,6 +69,7 @@ model Partner {
   bankDetailsJson      String   @default("{}")
   leadFormTokenHash    String?  @unique
   leadFormTokenCipher  String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt            DateTime @default(now())
 }
 
@@ -82,6 +83,7 @@ model PartnerTeamMember {
   role        String   @default("Manager") // Manager, Sales Rep, Stakeholder
   status      String   @default("Active")  // Active, Pending, Sent, Expired
   invitedAt   String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt   DateTime @default(now())
 }
 
@@ -113,6 +115,7 @@ model Lead {
   deadline          String   @default("")
   convertedDealId   String?
   hubspotSyncedAt   String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt         DateTime @default(now())
 }
 
@@ -146,6 +149,7 @@ model Deal {
   contractStart       String   @default("")
   contractEnd         String   @default("")
   lineItemsJson       String   @default("[]")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt           DateTime @default(now())
 }
 
@@ -165,6 +169,7 @@ model Customer {
   canceledDate      String   @default("")
   transactionsCount Int      @default(0)
   revenuesBase      Int      @default(0)
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt         DateTime @default(now())
   transactions      Transaction[]
 }
@@ -181,6 +186,7 @@ model Transaction {
   customer     Customer? @relation(fields: [customerId], references: [id])
   dealName     String
   monthKey     String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt    DateTime @default(now())
 }
 
@@ -201,6 +207,7 @@ model Reward {
   payoutId       String?
   payout         Payout?  @relation(fields: [payoutId], references: [id])
   comment        String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt      DateTime @default(now())
 }
 
@@ -218,6 +225,7 @@ model Payout {
   status       String   @default("Ready") // Draft, Pending, Ready, Paid
   invoiceRef   String   @default("")
   paidDate     String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt    DateTime @default(now())
   rewards      Reward[]
 }
@@ -237,6 +245,7 @@ model Task {
   createdBy       String   @default("")
   completedBy     String   @default("")
   completedDate   String   @default("")
+  customFieldsJson  String   @default("{}") // custom field values (R2b)
   createdAt       DateTime @default(now())
 }
 

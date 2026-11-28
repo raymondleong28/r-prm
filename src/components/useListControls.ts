@@ -7,10 +7,31 @@ import {
   cleanSavedViews,
   DEFAULT_LIST_STATE,
   filterableFields,
+  humaniseField,
   pageOf,
   type ListViewState,
   type SavedListView,
 } from "@/lib/listControls";
+import {
+  CUSTOM_PREFIX,
+  definitionsFromItems,
+  flattenCustomValues,
+  parseStoredValues,
+  type CustomFieldObject,
+} from "@/lib/customFieldDefs";
+
+const LIST_OBJECTS: Record<string, CustomFieldObject> = {
+  partners: "Partners",
+  prospection: "Partners",
+  "team-members": "Contacts",
+  leads: "Leads",
+  deals: "Deals",
+  customers: "Customers",
+  transactions: "Transactions",
+  rewards: "Rewards",
+  payouts: "Payouts",
+  tasks: "Tasks",
+};
 
 export type ListControls = ReturnType<typeof useListControls>;
 
@@ -23,7 +44,21 @@ export function useListControls<T extends Record<string, unknown>>(
   rows: T[],
   options: { dateField?: string; dateLabel?: string } = {}
 ) {
-  const { settings, mutate, showToast } = usePrm();
+  const { settings, mutate, showToast, manageItems } = usePrm();
+  const objectType = LIST_OBJECTS[listKey];
+  // Custom field values become plain columns ("custom.<key>") so filters and CSV export can use them
+  const fieldLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    if (objectType) for (const d of definitionsFromItems(manageItems || [], objectType, true)) labels[`${CUSTOM_PREFIX}${d.key}`] = d.label;
+    return labels;
+  }, [manageItems, objectType]);
+  const rowsWithCustom = useMemo(
+    () =>
+      objectType
+        ? rows.map((r) => (r.customFieldsJson ? ({ ...r, ...flattenCustomValues(parseStoredValues(r.customFieldsJson)) } as T) : r))
+        : rows,
+    [rows, objectType]
+  );
   const [state, setState] = useState<ListViewState>(DEFAULT_LIST_STATE);
   const [page, setPage] = useState(1);
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null);
@@ -34,11 +69,16 @@ export function useListControls<T extends Record<string, unknown>>(
   const savedViews = cleanSavedViews(allSaved[listKey]);
 
   const filteredRows = useMemo(
-    () => applyListState(rows, state, options.dateField),
-    [rows, state, options.dateField]
+    () => applyListState(rowsWithCustom, state, options.dateField),
+    [rowsWithCustom, state, options.dateField]
   );
   const paged = pageOf(filteredRows, page, state.pageSize);
-  const fields = useMemo(() => filterableFields(rows), [rows]);
+  const fields = useMemo(() => {
+    const found = filterableFields(rowsWithCustom);
+    // Every live custom field is filterable, even before any record has a value
+    for (const key of Object.keys(fieldLabels)) if (!found.includes(key)) found.push(key);
+    return found;
+  }, [rowsWithCustom, fieldLabels]);
 
   const update = (patch: Partial<ListViewState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -68,6 +108,8 @@ export function useListControls<T extends Record<string, unknown>>(
     filteredCount: filteredRows.length,
     totalCount: rows.length,
     fields,
+    fieldLabels,
+    labelFor: (field: string) => fieldLabels[field] || humaniseField(field),
     savedViews,
     activeSavedView,
     clearSavedView: () => {

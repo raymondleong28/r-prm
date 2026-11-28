@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CreateFormCustomFields, customFieldsPayload, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
@@ -16,6 +17,7 @@ export default function CustomersListPage() {
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [customDraft, setCustomDraft] = useState<CustomFieldDraft>({});
 
   const acct = settings?.account_settings || {};
   const baseCurrency = acct.mainCurrency || SUPPORTED_CURRENCIES[0];
@@ -73,11 +75,13 @@ export default function CustomersListPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await mutate(
+    const res = await mutate(
       "CREATE_CUSTOMER",
-      form,
+      { ...form, customFields: customFieldsPayload(customDraft) },
       `Customer "${form.name}" added!`
     );
+    if (!res?.ok) return;
+    setCustomDraft({});
     setModalOpen(false);
   };
 
@@ -319,6 +323,9 @@ export default function CustomersListPage() {
                   </select>
                 </div>
               </div>
+            </div>
+            <div className="px-5 pb-4">
+              <CreateFormCustomFields objectType="Customers" draft={customDraft} onChange={setCustomDraft} />
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button

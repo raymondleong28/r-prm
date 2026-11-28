@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CustomFieldsPanel } from "@/components/CustomFields";
 import { useParams } from "next/navigation";
 import { usePrm } from "@/context/PrmContext";
 import { BackBreadcrumb, StatusBadge } from "@/components/SharedEngines";
@@ -167,6 +168,7 @@ export default function RewardDetailPage() {
           </div>
         )}
       </div>
+      <CustomFieldsPanel objectType="Rewards" recordId={reward.id} stored={reward.customFieldsJson} />
     </div>
   );
 }

@@ -188,10 +188,15 @@ The reference product's reward form, observed field by field:
 - Rule form (`src/components/ProgramRuleModal.tsx`, helpers in `src/lib/ruleEditing.ts`): label, description, reward type (cash / credit / gift card / coupon), trigger, "reward every transaction?" Yes / No, conditions added and removed in any combination, amount (fixed with currency, % of a number field, or one month's subscription), optional rate periods, validation and refund reversal, a one-line summary of what the rule pays, and save checks.
 - Editing an older rule turns its start month / duration into a visible month-range condition with the same effect; older field conditions the form can't edit are kept exactly as saved. Fixture 37 proves every template and every seeded rule pays the same after editing.
 - Saving a template from Manage keeps all its settings (it used to reset them to "recurring, 12 months").
-- Still open: custom properties on the reward itself (comes with R2b custom fields).
+- Custom fields on rewards: see R2b below.
+
+**Done in R2b (Fixture 38) — keep green:**
+- Custom fields for contacts, customers, deals, leads, partners, rewards, payouts, tasks, transactions and products. Definitions in Account settings → Properties (`src/components/CustomFields.tsx`): text, number, email, checkbox, single select, date. Name and options can change; type and key can't; an option still used by a record can't be removed; archive keeps stored values.
+- Values stored per record (`customFieldsJson`; products in `metadataJson.customFields`), checked on the server (`src/lib/customFieldDefs.ts`, `src/lib/customFieldStore.ts`), audited with before/after. Team only: partners can't see or set them.
+- Shown on create forms (partner, lead, deal, customer, transaction, task, contact) and every detail page; usable in list filters and CSV export (column header = field name); customer and transaction fields usable in reward rule conditions, number transaction fields in "% of".
+- Security fix found on the way: a partner user could change any field on its own partner record (e.g. its level). Partners can now change only their bank details, and only as the partner manager.
 
 Rounds (each: tests first, one commit, all fixtures green, Ray checks before the next):
-- **R2b — custom fields:** custom property values stored on records, shown on forms and detail pages, usable in filters, export, rule conditions and "% of field".
 - **R2c — remaining triggers:** deal stage changed (with editable deal stages), deal contract started, new customer, customer field changed, website visit (with referral link tracking — needs a public address, so it can wait for go-live).
 - **R4 — proof:** rebuild the recurring-program rules above with synthetic data, feed 24 months of monthly / quarterly / half-yearly / yearly invoices, assert every reward amount and date. Ray confirms expected numbers first (§1.5).
 

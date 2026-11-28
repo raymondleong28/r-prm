@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CustomFieldsPanel } from "@/components/CustomFields";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
@@ -247,6 +248,7 @@ export default function LeadDetailPage() {
           }
         }}
       />
+      <CustomFieldsPanel objectType="Leads" recordId={lead.id} stored={lead.customFieldsJson} />
     </div>
   );
 }

@@ -25,7 +25,9 @@ import {
 } from "./importAndEmailHelpers";
 import { executeWorkspaceAdminMutation } from "./workspaceAdminMutations";
 import crypto from "node:crypto";
+import { executeCustomFieldMutation, prepareCreateCustomFields } from "./customFieldStore";
 import {
+  nextRewardNumber,
   generateRewardsForDealWon,
   generateRewardsForLeadAccepted,
   generateRewardsForTransaction,
@@ -53,6 +55,8 @@ export {
   matchAccountListsByDomainAndName,
 };
 
+const PARTNER_EDITABLE_FIELDS = new Set(["bankDetailsJson"]);
+
 export async function executeResourceMutation(
   session: RprmSession,
   action: string,
@@ -61,6 +65,10 @@ export async function executeResourceMutation(
 ) {
   const ws = await getWorkspaceAccountSettings();
   const todayIso = currentIsoDateInTimezone(ws.timezone);
+  // Custom field values sent with a create action are checked before anything is written (R2b)
+  const preparedCustom = await prepareCreateCustomFields(session, action, payload);
+  if (preparedCustom.error) return preparedCustom.error;
+  const customFieldsJson = preparedCustom.json;
 
   switch (action) {
     case "CSV_IMPORT":
@@ -186,6 +194,7 @@ export async function executeResourceMutation(
 
       const partner = await prisma.partner.create({
         data: {
+          customFieldsJson,
           name: String(payload.name || "").trim(),
           ownerId: payload.ownerId || session.userId,
           owner: payload.owner || session.name,
@@ -441,6 +450,25 @@ export async function executeResourceMutation(
         );
       }
       const updateData = { ...(payload.data || {}) };
+      if (session.identityType === "partner") {
+        // Partners may only change their own bank and self-invoicing details, never their program,
+        // level, status or other admin fields (a partner could otherwise raise its own commission tier).
+        const notAllowed = Object.keys(updateData).filter((k) => !PARTNER_EDITABLE_FIELDS.has(k));
+        if (notAllowed.length > 0) {
+          return NextResponse.json(
+            { error: `Partners can't change: ${notAllowed.join(", ")}` },
+            { status: 403 }
+          );
+        }
+        if (session.role !== "Manager") {
+          return NextResponse.json(
+            { error: "Only your company's partner manager can change bank details." },
+            { status: 403 }
+          );
+        }
+      }
+      // Custom fields have their own checked action
+      delete updateData.customFieldsJson;
       if (typeof updateData.bankDetailsJson === "string") {
         updateData.bankDetailsJson = encryptBankDetails(
           updateData.bankDetailsJson
@@ -488,6 +516,7 @@ export async function executeResourceMutation(
       }
       const member = await prisma.partnerTeamMember.create({
         data: {
+          customFieldsJson,
           name: String(payload.name || "").trim(),
           email: String(payload.email || "").trim(),
           jobTitle: String(payload.jobTitle || "").trim(),
@@ -587,6 +616,7 @@ export async function executeResourceMutation(
       });
       const lead = await prisma.lead.create({
         data: {
+          customFieldsJson,
           firstName: String(payload.firstName || "").trim(),
           lastName: String(payload.lastName || "").trim(),
           company: String(payload.company || "").trim(),
@@ -760,6 +790,7 @@ export async function executeResourceMutation(
       );
       const deal = await prisma.deal.create({
         data: {
+          customFieldsJson,
           name: String(payload.name || "").trim(),
           ownerId:
             session.identityType === "coworker"
@@ -913,6 +944,7 @@ export async function executeResourceMutation(
     case "CREATE_CUSTOMER": {
       const customer = await prisma.customer.create({
         data: {
+          customFieldsJson,
           name: String(payload.name || "").trim(),
           email: String(payload.email || "").trim(),
           status: payload.status || "Paying",
@@ -974,6 +1006,7 @@ export async function executeResourceMutation(
       }
       const tx = await prisma.transaction.create({
         data: {
+          customFieldsJson,
           name:
             payload.name ||
             `TX-${todayIso.replace(/-/g, "")}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
@@ -1024,7 +1057,8 @@ export async function executeResourceMutation(
       );
       const reward = await prisma.reward.create({
         data: {
-          rewardNumber: `RW-${Math.floor(1050 + Math.random() * 8900)}`,
+          customFieldsJson,
+          rewardNumber: await nextRewardNumber(),
           partnerName,
           recipientName: partnerName,
           type: payload.type || "Cash",
@@ -1157,6 +1191,7 @@ export async function executeResourceMutation(
       )}`;
       const payout = await prisma.payout.create({
         data: {
+          customFieldsJson,
           payoutNumber,
           name: payload.name || `Partner Payout Settlement — ${partnerName}`,
           partnerName,
@@ -1239,6 +1274,7 @@ export async function executeResourceMutation(
     case "CREATE_TASK": {
       const task = await prisma.task.create({
         data: {
+          customFieldsJson,
           name: String(payload.name || "").trim(),
           status: payload.status || "Upcoming",
           type: payload.type || "Follow-up",
@@ -1452,6 +1488,9 @@ export async function executeResourceMutation(
     }
 
     default:
-      return executeWorkspaceAdminMutation(session, action, payload, todayIso);
+      return (
+        (await executeCustomFieldMutation(session, action, payload)) ??
+        executeWorkspaceAdminMutation(session, action, payload, todayIso)
+      );
   }
 }

@@ -30,8 +30,12 @@ export function exportableColumns(rows: Array<Record<string, unknown>>): string[
   return columns;
 }
 
-export function rowsToCsv(rows: Array<Record<string, unknown>>, columns = exportableColumns(rows)): string {
-  const header = columns.map(escapeCsvCell).join(",");
+export function rowsToCsv(
+  rows: Array<Record<string, unknown>>,
+  columns = exportableColumns(rows),
+  headerLabels: Record<string, string> = {}
+): string {
+  const header = columns.map((c) => escapeCsvCell(headerLabels[c] || c)).join(",");
   const body = rows.map((row) => columns.map((c) => escapeCsvCell(row[c])).join(","));
   return [header, ...body].join("\r\n");
 }

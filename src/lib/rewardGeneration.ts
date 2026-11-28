@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { toMajorUnits, type GeneratedRewardResult } from "./prmEngine";
 import { customerHistoryPosition, rewardsForEvent, sortableMonthKey, type RewardEvent } from "./rewardRules";
+import { flattenCustomValues, parseStoredValues } from "./customFieldDefs";
 
 // Turns live events (transaction recorded, deal won, lead accepted) into reward records,
 // using the partner's level rules. Safe to call more than once for the same event.
@@ -97,8 +98,10 @@ export async function buildTransactionEvent(transactionId: string): Promise<Rewa
     partnerName: tx.partnerName,
     currency: tx.currency,
     amount,
-    record: { ...tx, amount, amountBase: toMajorUnits(tx.amountBase) },
-    customer: customer ? { ...customer, revenuesBase: toMajorUnits(customer.revenuesBase) } : null,
+    record: { ...tx, amount, amountBase: toMajorUnits(tx.amountBase), ...flattenCustomValues(parseStoredValues(tx.customFieldsJson)) },
+    customer: customer
+      ? { ...customer, revenuesBase: toMajorUnits(customer.revenuesBase), ...flattenCustomValues(parseStoredValues(customer.customFieldsJson)) }
+      : null,
     hasDeal: Boolean(tx.dealName),
     monthIndex: pos.monthIndex,
     transactionIndex: pos.transactionIndex,
@@ -130,7 +133,7 @@ export async function generateRewardsForDealWon(dealId: string, baseCurrency?: s
     partnerName: deal.partnerName,
     currency: deal.currency,
     amount,
-    record: { ...deal, amount, amountBase: toMajorUnits(deal.amountBase) },
+    record: { ...deal, amount, amountBase: toMajorUnits(deal.amountBase), ...flattenCustomValues(parseStoredValues(deal.customFieldsJson)) },
   };
   return persistGeneratedRewards(rewardsForEvent(partner, programs, event, undefined, baseCurrency), deal.id);
 }
@@ -149,7 +152,7 @@ export async function generateRewardsForLeadAccepted(leadId: string, baseCurrenc
     partnerName: lead.sourcePartnerName,
     currency: baseCurrency || "",
     amount: 0,
-    record: { ...lead },
+    record: { ...lead, ...flattenCustomValues(parseStoredValues(lead.customFieldsJson)) },
   };
   return persistGeneratedRewards(rewardsForEvent(partner, programs, event, undefined, baseCurrency), lead.id);
 }

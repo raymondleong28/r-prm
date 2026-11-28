@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { CreateFormCustomFields, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { X, Mail, Sparkles, ExternalLink } from "lucide-react";
 import { SUPPORTED_CURRENCIES } from "@/lib/prmEngine";
@@ -25,6 +26,8 @@ export function AppShellDrawersAndModals({
   dealForm,
   setDealForm,
   handleCreateDeal,
+  customDraft,
+  setCustomDraft,
 }: {
   openMenu: string | null;
   closeMenus: () => void;
@@ -55,6 +58,8 @@ export function AppShellDrawersAndModals({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setDealForm: (f: any) => void;
   handleCreateDeal: (e: React.FormEvent) => void;
+  customDraft: CustomFieldDraft;
+  setCustomDraft: (d: CustomFieldDraft) => void;
 }) {
   return (
     <>
@@ -403,6 +408,9 @@ export function AppShellDrawersAndModals({
                 </span>
               </label>
             </div>
+            <div className="px-6 pb-4">
+              <CreateFormCustomFields objectType="Partners" draft={customDraft} onChange={setCustomDraft} />
+            </div>
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button
                 type="button"
@@ -648,6 +656,9 @@ export function AppShellDrawersAndModals({
                 />
               </div>
             </div>
+            <div className="px-6 pb-4">
+              <CreateFormCustomFields objectType="Leads" draft={customDraft} onChange={setCustomDraft} />
+            </div>
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button
                 type="button"
@@ -890,6 +901,11 @@ export function AppShellDrawersAndModals({
               )}
             </div>
 
+            {dealStep === 3 && (
+              <div className="px-6 pb-4">
+                <CreateFormCustomFields objectType="Deals" draft={customDraft} onChange={setCustomDraft} />
+              </div>
+            )}
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-between">
               {dealStep > 1 ? (
                 <button

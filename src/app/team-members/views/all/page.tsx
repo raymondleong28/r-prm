@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CreateFormCustomFields, customFieldsPayload, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar, StatusBadge } from "@/components/SharedEngines";
@@ -12,6 +13,7 @@ export default function PartnerTeamMembersPage() {
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [customDraft, setCustomDraft] = useState<CustomFieldDraft>({});
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkRole, setBulkRole] = useState("Manager");
@@ -69,14 +71,17 @@ export default function PartnerTeamMembersPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await mutate(
+    const res = await mutate(
       "CREATE_TEAM_MEMBER",
       {
         ...form,
         name: `${form.firstName} ${form.lastName}`.trim(),
+        customFields: customFieldsPayload(customDraft),
       },
       `Partner team member ${form.firstName} ${form.lastName} added!`
     );
+    if (!res?.ok) return;
+    setCustomDraft({});
     setModalOpen(false);
   };
 
@@ -366,6 +371,9 @@ export default function PartnerTeamMembersPage() {
                   This contact has access to the partner portal
                 </span>
               </label>
+            </div>
+            <div className="px-5 pb-4">
+              <CreateFormCustomFields objectType="Contacts" draft={customDraft} onChange={setCustomDraft} />
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button

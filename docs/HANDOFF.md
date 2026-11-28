@@ -118,3 +118,30 @@ Judgement calls:
 - Manage → Commission templates: renaming a template no longer resets its timing to "recurring, 12 months".
 
 Not done (stays open): custom properties on the reward itself — needs R2b custom fields.
+
+---
+
+## Round R2b report (§3.6 custom fields) — 28 Nov 2026, writer: Claude
+
+| Item | Check | Result |
+|---|---|---|
+| Value checks | Fixture 38: number "1,250.50" → 1250.5, "yes" → true, email lower-cased, select matched case-insensitively, real dates only; 7 bad inputs (wrong option, text in number, bad yes/no, bad email, 30 Feb, archived field, unknown field) all refused | Pass |
+| Definitions | Fixture 38: duplicate name on the same record type refused (server too); same name on another type allowed; select needs options; key, type and record type fixed on edit; rename keeps the key; removing an option still in use → 409; partners can't define fields | Pass |
+| Stored and audited | Fixture 38: a bad value stops the whole create (no record); values stored on the record; edit writes an audit entry with before/after; partners get 403 on create-with-fields and on edit | Pass |
+| Reward rules | Fixture 38: rule "10% of Setup fee if customer Region is Asia and transaction Plan type is Monthly" pays 40 on fee 400; Quarterly plan → nothing; Europe customer → nothing; after changing the customer to Asia → pays | Pass |
+| Archive | Fixture 38: archived field keeps its stored value and can't be changed | Pass |
+| Partner self-edit | Fixture 38: partner user changing its own level/status → 403, level unchanged; Sales Rep changing bank details → 403 | Pass |
+| Browser | Properties: "needs an option" error shown; created 2 transaction fields + 1 customer field → listed in order. Add transaction form shows them → saved on the record. List filter "Plan is monthly" → 1 row (the new one). Detail page panel: Edit → 300 → Save → still 300 after reload. Rule form offers the number field in "% of" and the customer field in conditions. No page errors | Pass |
+| Products | Fixture 38: product value saved inside the product's settings next to its SKU. Browser: Manage → Products → Edit shows the custom fields; Edit/Save inside the product form doesn't submit or close it; value saved | Pass |
+| Typecheck / 38 fixtures / build | cloud PostgreSQL 16 harness | Pass |
+
+Judgement calls and changes:
+- Products: custom fields can be filled once the product exists (in its Edit form).
+- Custom fields are team-only for now (not shown in the partner portal). Showing chosen fields to partners can be added later as a per-field switch.
+- Values of an archived field stay on records and still show on detail pages marked "(archived)"; they can't be edited until restored.
+- Migration 0007 adds an empty `customFieldsJson` ("{}") to nine tables; nothing is changed or deleted.
+- Demo seed: the five old demo properties (which duplicated built-in lead/deal fields and had no options stored) are replaced by five demo fields with options; the two fake "API token" demo rows (with made-up "last used" times, never shown since real tokens arrived) are removed. Existing databases keep their rows until re-seeded.
+- Manual "create reward" used a random reward number (could clash); it now uses the same sequence as generated rewards.
+- The add partner / lead / deal / customer / transaction / task / contact forms now stay open when the server refuses the save, so typed values aren't lost.
+
+Seen, not fixed (outside this round): Account defaults → the "Track leads and deals in multiple currencies" tick box isn't saved anywhere.

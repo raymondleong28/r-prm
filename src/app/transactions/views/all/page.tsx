@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { CreateFormCustomFields, customFieldsPayload, type CustomFieldDraft } from "@/components/CustomFields";
 import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { EntityListToolbar } from "@/components/SharedEngines";
@@ -19,6 +20,7 @@ export default function TransactionsListPage() {
   const [activeView, setActiveView] = useState("All");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [customDraft, setCustomDraft] = useState<CustomFieldDraft>({});
 
   const acct = settings?.account_settings || {};
   const baseCurrency = acct.mainCurrency || SUPPORTED_CURRENCIES[0];
@@ -72,14 +74,17 @@ export default function TransactionsListPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await mutate(
+    const res = await mutate(
       "CREATE_TRANSACTION",
       {
         ...form,
         currency: form.currency || baseCurrency,
+        customFields: customFieldsPayload(customDraft),
       },
       `Transaction "${form.name}" recorded!`
     );
+    if (!res?.ok) return;
+    setCustomDraft({});
     setModalOpen(false);
   };
 
@@ -269,6 +274,9 @@ export default function TransactionsListPage() {
                   ))}
                 </select>
               </div>
+            </div>
+            <div className="px-5 pb-4">
+              <CreateFormCustomFields objectType="Transactions" draft={customDraft} onChange={setCustomDraft} />
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end space-x-2">
               <button

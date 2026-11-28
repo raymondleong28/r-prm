@@ -1293,14 +1293,11 @@ export async function seedDatabase(options?: { forceReset?: boolean }) {
       { category: "workflows", name: "Notify Slack #channel-wins on New Partner Deal Registration", subtitle: "Trigger: Deal Registered by Partner → Action: Post Slack Message & Assign Owner", status: "Active", metadataJson: JSON.stringify({ trigger: "Deal Registered", runs: 64 }) },
       { category: "workflows", name: "Escalate Unaccepted Shared Leads After 72 Hours", subtitle: "Trigger: Shared Lead Pending > 3 Days → Action: Send Reminder Email to Partner Manager", status: "Active", metadataJson: JSON.stringify({ trigger: "Lead Pending 72h", runs: 12 }) },
       // 14. Custom Properties (Settings -> Properties)
-      { category: "custom_properties", name: "Retail Brand Name", subtitle: "Object: Leads · Type: Single line text · Required on Partner Portal", status: "Active", metadataJson: JSON.stringify({ objectType: "Leads", fieldType: "Single line text" }) },
-      { category: "custom_properties", name: "Number of Outlets", subtitle: "Object: Leads · Type: Number · Used for Tier Routing", status: "Active", metadataJson: JSON.stringify({ objectType: "Leads", fieldType: "Number" }) },
-      { category: "custom_properties", name: "POS Solution (If Any)", subtitle: "Object: Leads · Type: Single select · Options: CloudPOS, Synthetix, Shopify, Oracle", status: "Active", metadataJson: JSON.stringify({ objectType: "Leads", fieldType: "Single select" }) },
-      { category: "custom_properties", name: "Subscription Plan", subtitle: "Object: Deals & Customers · Type: Single select · Enterprise, Growth Pro, Starter", status: "Active", metadataJson: JSON.stringify({ objectType: "Deals", fieldType: "Single select" }) },
-      { category: "custom_properties", name: "Registered Company Tax ID", subtitle: "Object: Partners · Type: Single line text · Required for Self-Invoicing", status: "Active", metadataJson: JSON.stringify({ objectType: "Partners", fieldType: "Single line text" }) },
-      // 15. API Access Tokens (Settings -> Integration)
-      { category: "api_tokens", name: "Production HubSpot Middleware Token", subtitle: "rprm_live_98a7f...31c · Created Oct 12, 2026 by Alex Morgan · Last used 5 mins ago", status: "Active", metadataJson: JSON.stringify({ scopes: "deals:write, leads:write, partners:read" }) },
-      { category: "api_tokens", name: "Data Warehouse BI Reporting Key", subtitle: "rprm_live_44b1e...09d · Created Sep 01, 2026 by Sarah Jenkins · Last used 1 hour ago", status: "Active", metadataJson: JSON.stringify({ scopes: "read:all" }) },
+      { category: "custom_properties", name: "Lead temperature", subtitle: "", status: "Active", metadataJson: JSON.stringify({ objectType: "Leads", fieldType: "select", key: "lead_temperature", options: ["Hot", "Warm", "Cold"] }) },
+      { category: "custom_properties", name: "Competitor in deal", subtitle: "", status: "Active", metadataJson: JSON.stringify({ objectType: "Deals", fieldType: "text", key: "competitor_in_deal", options: [] }) },
+      { category: "custom_properties", name: "Registered company tax ID", subtitle: "", status: "Active", metadataJson: JSON.stringify({ objectType: "Partners", fieldType: "text", key: "registered_company_tax_id", options: [] }) },
+      { category: "custom_properties", name: "Outlet count", subtitle: "", status: "Active", metadataJson: JSON.stringify({ objectType: "Customers", fieldType: "number", key: "outlet_count", options: [] }) },
+      { category: "custom_properties", name: "Invoice number", subtitle: "", status: "Active", metadataJson: JSON.stringify({ objectType: "Transactions", fieldType: "text", key: "invoice_number", options: [] }) },
       // 16. Editable Commission Rule Templates (§3.5.2)
       ...Object.values(DEFAULT_COMMISSION_TEMPLATES).map((tpl) => ({
         category: "commission_templates",

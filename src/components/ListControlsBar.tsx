@@ -6,7 +6,6 @@ import {
   DATE_RANGE_OPTIONS,
   FILTER_OPERATORS,
   PAGE_SIZES,
-  humaniseField,
   type DateRangePreset,
   type FilterOperator,
 } from "@/lib/listControls";
@@ -334,7 +333,7 @@ export function ListControlsBar({ views, activeView, onSelectView, search, onSea
                 className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white border border-blue-300 text-blue-800 font-semibold"
               >
                 <span>
-                  {humaniseField(f.field)} {FILTER_OPERATORS.find((o) => o.id === f.operator)?.label}
+                  {controls.labelFor(f.field)} {FILTER_OPERATORS.find((o) => o.id === f.operator)?.label}
                   {FILTER_OPERATORS.find((o) => o.id === f.operator)?.needsValue ? ` "${f.value}"` : ""}
                 </span>
                 <button
@@ -363,7 +362,7 @@ export function ListControlsBar({ views, activeView, onSelectView, search, onSea
               <option value="">Choose a field…</option>
               {controls.fields.map((f) => (
                 <option key={f} value={f}>
-                  {humaniseField(f)}
+                  {controls.labelFor(f)}
                 </option>
               ))}
             </select>

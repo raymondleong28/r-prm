@@ -1,10 +1,9 @@
 "use client";
 
 import React from "react";
-import { StatusBadge } from "@/components/SharedEngines";
 import { ApiTokensPanel } from "@/components/ApiTokensPanel";
+import { CustomFieldsBuilder } from "@/components/CustomFields";
 import {
-  Plus,
   Database,
   AlertTriangle,
   Code2,
@@ -13,16 +12,6 @@ import {
 
 interface AccountSystemTabsProps {
   activeTab: string;
-  propertyObjects: readonly string[];
-  propObject: string;
-  setPropObject: (obj: string) => void;
-  newPropName: string;
-  setNewPropName: (val: string) => void;
-  newPropType: string;
-  setNewPropType: (val: string) => void;
-  handleAddProperty: (e: React.FormEvent) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  customProps: any[];
   resetConfirmationText: string;
   setResetConfirmationText: (val: string) => void;
   showToast: (msg: string) => void;
@@ -35,15 +24,6 @@ interface AccountSystemTabsProps {
 
 export function AccountSystemTabs({
   activeTab,
-  propertyObjects,
-  propObject,
-  setPropObject,
-  newPropName,
-  setNewPropName,
-  newPropType,
-  setNewPropType,
-  handleAddProperty,
-  customProps,
   resetConfirmationText,
   setResetConfirmationText,
   showToast,
@@ -53,83 +33,7 @@ export function AccountSystemTabs({
 }: AccountSystemTabsProps) {
   return (
     <>
-      {activeTab === "properties" && (
-        <div className="space-y-4">
-          <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-2">
-            Custom Properties Builder (10 Object Types)
-          </h2>
-          <div className="flex flex-wrap gap-1.5">
-            {propertyObjects.map((obj) => (
-              <button
-                key={obj}
-                onClick={() => setPropObject(obj)}
-                className={`px-3 py-1.5 rounded-lg font-semibold ${
-                  propObject === obj
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                {obj}
-              </button>
-            ))}
-          </div>
-
-          <form
-            onSubmit={handleAddProperty}
-            className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap gap-2 items-end"
-          >
-            <div className="flex-1 min-w-[180px]">
-              <label className="block font-medium text-slate-700 mb-1">
-                New {propObject} Property Label
-              </label>
-              <input
-                value={newPropName}
-                onChange={(e) => setNewPropName(e.target.value)}
-                placeholder="e.g. Regional ERP System"
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
-              />
-            </div>
-            <div>
-              <label className="block font-medium text-slate-700 mb-1">
-                Field Type
-              </label>
-              <select
-                value={newPropType}
-                onChange={(e) => setNewPropType(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
-              >
-                <option>Single line text</option>
-                <option>Number</option>
-                <option>Email</option>
-                <option>Checkbox</option>
-                <option>Single select</option>
-              </select>
-            </div>
-            <button
-              type="submit"
-              className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-semibold flex items-center space-x-1"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add property</span>
-            </button>
-          </form>
-
-          <div className="divide-y divide-slate-100">
-            {customProps.map((cp) => (
-              <div
-                key={cp.id}
-                className="py-2.5 flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-bold text-slate-900">{cp.name}</p>
-                  <p className="text-slate-500">{cp.subtitle}</p>
-                </div>
-                <StatusBadge status={cp.status} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {activeTab === "properties" && <CustomFieldsBuilder />}
 
       {activeTab === "data" && (
         <div className="space-y-4">

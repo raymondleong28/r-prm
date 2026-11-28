@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePrm } from "@/context/PrmContext";
 import { BackBreadcrumb, StatusBadge } from "@/components/SharedEngines";
 import { ProgramRuleModal } from "@/components/ProgramRuleModal";
-import { describeRule, toEditableRule } from "@/lib/ruleEditing";
+import { describeRule, ruleFieldChoices, toEditableRule } from "@/lib/ruleEditing";
+import { definitionsFromItems } from "@/lib/customFieldDefs";
 import {
   StructuredRewardRule,
   SUPPORTED_CURRENCIES,
@@ -133,6 +134,8 @@ export default function ProgramDetailPage() {
   const commissionTemplateItems = manageItems.filter(
     (m) => m.category === "commission_templates"
   );
+  const customFieldDefs = definitionsFromItems(manageItems, undefined, true);
+  const fieldLabels = ruleFieldChoices(customFieldDefs).labels;
   const onboardingPipelines = manageItems.filter(
     (m) => m.category === "onboarding_pipelines"
   );
@@ -207,7 +210,7 @@ export default function ProgramDetailPage() {
       {
         category: "commission_templates",
         name: tplTitle,
-        subtitle: describeRule(rule, baseCurrency),
+        subtitle: describeRule(rule, baseCurrency, fieldLabels),
         status: "Active",
         metadata: {
           ...rule,
@@ -792,7 +795,7 @@ export default function ProgramDetailPage() {
                                       {r.valueType}
                                     </span>
                                   </div>
-                                  <p className="text-slate-700">{describeRule(r, baseCurrency)}</p>
+                                  <p className="text-slate-700">{describeRule(r, baseCurrency, fieldLabels)}</p>
                                   {r.description && <p className="text-slate-500 text-[11px]">{r.description}</p>}
                                   <p className="text-slate-500 text-[11px]">
                                     {r.requiresValidation ? "Needs admin validation" : "Validated automatically"} ·{" "}
@@ -1044,6 +1047,7 @@ export default function ProgramDetailPage() {
         onSaveRule={handleSaveRule}
         onSaveAsTemplate={handleSaveAsTemplate}
         onDeleteTemplate={handleDeleteTemplate}
+        customFieldDefs={customFieldDefs}
       />
 
       {deleteConfirmRuleId && (

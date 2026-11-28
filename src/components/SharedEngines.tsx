@@ -176,7 +176,7 @@ export function EntityListToolbar({
               const rows = exportRows || [];
               const stamp = new Date().toISOString().slice(0, 10);
               const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-              downloadCsv(`${slug}-${stamp}.csv`, rowsToCsv(rows));
+              downloadCsv(`${slug}-${stamp}.csv`, rowsToCsv(rows, undefined, controls?.fieldLabels));
               showToast(`Exported ${rows.length} row(s) to CSV`);
             }}
             className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 flex items-center space-x-1.5"
@@ -336,17 +336,6 @@ export function NotesAndActivitiesTab({
   const [emailBody, setEmailBody] = useState("");
   const [taskName, setTaskName] = useState("");
 
-  // P6: Custom properties for this entityType
-  const customProps = (Array.isArray(settings.custom_properties)
-    ? settings.custom_properties
-    : []
-  ).filter(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (cp: any) =>
-      !cp.object ||
-      String(cp.object).toLowerCase().includes(entityType.toLowerCase())
-  );
-
   const entityNotes = notes.filter(
     (n) => n.entityType === entityType && n.entityId === entityId
   );
@@ -485,28 +474,6 @@ export function NotesAndActivitiesTab({
 
   return (
     <div className="space-y-4">
-      {customProps.length > 0 && (
-        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-          <p className="font-bold text-slate-800">
-            Custom Properties ({entityType.toUpperCase()})
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {customProps.map((cp: any) => (
-              <div
-                key={cp.id || cp.name}
-                className="p-2 rounded bg-white border border-slate-200 flex items-center justify-between"
-              >
-                <span className="text-slate-600">{cp.label || cp.name}:</span>
-                <span className="font-semibold text-slate-900">
-                  {cp.defaultValue || "Configured"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2 text-xs">
         {(
           [
